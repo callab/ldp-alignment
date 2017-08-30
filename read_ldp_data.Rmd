@@ -1,0 +1,68 @@
+---
+title: Linguistic Alignment in LDP
+author: Jo Denby, Ashley Leung, and Dan Yurovksy
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: false
+    number_sections: false
+    theme: lumen
+    toc_float: false
+    code_folding: show
+---
+
+```{r setup, include = FALSE}
+library(knitr)
+library(tidyverse)
+library(readr)
+library(stringr)
+library(DT)
+
+opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+               error = FALSE, cache = TRUE, tidy = FALSE)
+```
+
+
+Read in LDP data. Don't display in public repo
+```{r read_ldp}
+LDP_DIR <- "~/Documents/LDP/ldp.db"
+
+# Read in LDP data
+ldp <- src_sqlite(LDP_DIR)
+
+# Get all participants
+subjs <- tbl(ldp, "subjects") %>%
+  collect()
+
+# Get visit data
+visits <- tbl(ldp, "visits") %>%
+  collect() %>%
+  select(subject, session, date, child_age, child_age_years, child_age_months,
+         income, mother_education, father_education)
+```
+
+Read in LIWC Categories
+```{r read_liwc}
+liwc <- read_tsv("word_lists/liwc2007_converted.tsv")
+```
+
+Set up utterances for computing alignment
+```{r setup_alignment}
+# What do we do when both participants talk on the same line
+utterances <- tbl(ldp, "utterances") %>%
+  select(subject, session, line, p_chat, c_chat) %>%
+  filter(p_chat != "" | c_chat != "") %>%
+  collect() 
+
+split_utts <- utterances %>%
+  gather(person, chat, c(p_chat, c_chat)) %>%
+  mutate(person = if_else(person == "p_chat", "Parent", "Child")) %>%
+  group_by(subject, session, person)
+
+
+# Now want to:
+# 1. flatten all successive utterances from the same person
+# 2. Count the number of appearances of each target word in each utterances
+# 3. At a lag of one (use the lag function), check if the previous speaker's utterance contained each word
+# 4. aggregate!
+```
