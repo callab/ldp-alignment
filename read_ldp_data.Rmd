@@ -87,7 +87,7 @@ df_new <- df %>%
   
 
 flat_utt <- split_utts %>%
-  mutate(new= findRuns(person, utterances, ''))
+  mutate(new= findRuns(person, chat, ''))
 # Throws error ??
 
 # findRuns <- function(person,chat, super_utt) {
