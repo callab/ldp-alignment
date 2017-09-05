@@ -147,7 +147,6 @@ long_present <- present %>%
 # mutate(n_back = findRuns(typedLabel, 0)) %>%
   
 
-
 # Now want to:
 # 1. flatten all successive utterances from the same person
 # 2. Count the number of appearances of each target word in each utterances
