@@ -25,7 +25,8 @@ opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
 
 Read in LDP data. Don't display in public repo
 ```{r read_ldp}
-LDP_DIR <- "~/ldp/data/ldp.db"
+LDP_DIR <- "~/Documents/LDP/ldp.db"
+#LDP_DIR <- "~/ldp/data/ldp.db"
 
 # Read in LDP data
 ldp <- src_sqlite(LDP_DIR)
@@ -52,42 +53,45 @@ Set up utterances for computing alignment
 utterances <- tbl(ldp, "utterances") %>%
   select(subject, session, line, p_chat, c_chat) %>%
   filter(p_chat != "" | c_chat != "") %>%
-  collect()
+  collect() %>%
+  mutate(order = 1:n())
   
-utterances <- mutate(utterances,order = seq.int(nrow(utterances)))
+#utterances <- mutate(utterances,order = seq.int(nrow(utterances)))
 
-
+#use rleid from data table to do squashing by run
 split_utts <- utterances %>%
   gather(person, chat, c(p_chat, c_chat)) %>%
   mutate(person = if_else(person == "p_chat", "Parent", "Child")) %>%
-  filter(chat!="") %>%
-  group_by(subject, session) %>%
-  arrange(order)
+  filter(chat != "") %>%
+  arrange(order) %>%
+  mutate(run = data.table::rleid(subject, session, person)) %>%
+  group_by(run, session, person) %>%
+  summarise(chat = paste0(chat, collapse = " ")) 
 
-
-person <- c('c', 'p', 'p', 'p')
-chatters <- c('blah', 'flerg', 'hmm', 'wow')
-df <- data_frame(person, chatters)
-
-findRuns <- function(check, utt, super_utt) {
-  #check ifelse person is same
-  tmp <- ifelse(check == lag(check),  
-              #recursively call function, with lagged arguments and updated super_utt
-               findRuns(lag(check), 
-                          lag(utt), 
-                          paste(super_utt, utt)), 
-              #otherwise, just update the super utt
-               paste(super_utt, utt))
-  #final check, to see if above lines return NA, in which case return unchanged utt
-  ifelse(is.na(tmp), utt, tmp)
-}
-
-df_new <- df %>%
-  mutate(new= findRuns(person, chatters, ''))
-  
-
-flat_utt <- split_utts %>%
-  mutate(new= findRuns(person, chat, ''))
+# 
+# person <- c('c', 'p', 'p', 'p')
+# chatters <- c('blah', 'flerg', 'hmm', 'wow')
+# df <- data_frame(person, chatters)
+# 
+# findRuns <- function(check, utt, super_utt) {
+#   #check ifelse person is same
+#   tmp <- ifelse(check == lag(check),  
+#               #recursively call function, with lagged arguments and updated super_utt
+#                findRuns(lag(check), 
+#                           lag(utt), 
+#                           paste(super_utt, utt)), 
+#               #otherwise, just update the super utt
+#                paste(super_utt, utt))
+#   #final check, to see if above lines return NA, in which case return unchanged utt
+#   ifelse(is.na(tmp), utt, tmp)
+# }
+# 
+# df_new <- df %>%
+#   mutate(new= findRuns(person, chatters, ''))
+#   
+# 
+# flat_utt <- split_utts %>%
+#   mutate(new= findRuns(person, chat, ''))
 # Throws error ??
 
 # findRuns <- function(person,chat, super_utt) {
