@@ -65,9 +65,9 @@ split_utts <- utterances %>%
   arrange(order)
 
 
-# person <- c('c', 'p', 'p', 'p')
-# chatters <- c('blah', 'flerg', 'hmm', 'wow')
-# df <- data_frame(person, chatters)
+person <- c('c', 'p', 'p', 'p')
+chatters <- c('blah', 'flerg', 'hmm', 'wow')
+df <- data_frame(person, chatters)
 
 findRuns <- function(check, utt, super_utt) {
   #check ifelse person is same
@@ -81,6 +81,10 @@ findRuns <- function(check, utt, super_utt) {
   #final check, to see if above lines return NA, in which case return unchanged utt
   ifelse(is.na(tmp), utt, tmp)
 }
+
+df_new <- df %>%
+  mutate(new= findRuns(person, chatters, ''))
+  
 
 flat_utt <- split_utts %>%
   mutate(new= findRuns(person, utterances, ''))
