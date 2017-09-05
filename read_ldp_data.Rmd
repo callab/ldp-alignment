@@ -13,11 +13,12 @@ output:
 
 ```{r setup, include = FALSE}
 library(knitr)
+library(data.table)
 library(tidyverse)
 library(readr)
 library(stringr)
 library(DT)
-
+library(tidytext)
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
 ```
@@ -44,7 +45,8 @@ visits <- tbl(ldp, "visits") %>%
 
 Read in LIWC Categories
 ```{r read_liwc}
-liwc <- read_tsv("word_lists/liwc2007_converted.tsv")
+liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
+  rename(word = X1, category = X2)
 ```
 
 Set up utterances for computing alignment
@@ -64,9 +66,32 @@ split_utts <- utterances %>%
   mutate(person = if_else(person == "p_chat", "Parent", "Child")) %>%
   filter(chat != "") %>%
   arrange(order) %>%
-  mutate(run = data.table::rleid(subject, session, person)) %>%
-  group_by(run, session, person) %>%
+  mutate(run = rleid(subject, session, person)) %>%
+  group_by(run, subject, session, person) %>%
   summarise(chat = paste0(chat, collapse = " ")) 
+
+tokens <- split_utts %>%
+  unnest_tokens(word, chat) %>%
+  arrange(run, subject, session) %>%
+  group_by(subject, session)
+
+#WRONG for regular expressions
+# use grep
+present <- map(1:2, function(row) {
+  data_frame(present = tokens$word == as.character(liwc[row, "word"]))
+}) %>%
+  bind_cols() 
+names(present) = pull(liwc, word)[1:2]
+
+
+long_present <- present %>%
+    slice(1:10) %>%
+  bind_cols(tokens) %>%
+  gather(liwc_word, count, names(present)) %>%
+  left_join(liwc, by = c("liwc_word" = "word")) %>%
+  group_by(subject, session, person, category) %>%
+  summarise(count = sum(count)) %>%
+  
 
 # 
 # person <- c('c', 'p', 'p', 'p')
