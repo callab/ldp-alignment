@@ -25,7 +25,7 @@ opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
 
 Read in LDP data. Don't display in public repo
 ```{r read_ldp}
-LDP_DIR <- "~/Documents/LDP/ldp.db"
+LDP_DIR <- "~/ldp/data/ldp.db"
 
 # Read in LDP data
 ldp <- src_sqlite(LDP_DIR)
@@ -52,12 +52,67 @@ Set up utterances for computing alignment
 utterances <- tbl(ldp, "utterances") %>%
   select(subject, session, line, p_chat, c_chat) %>%
   filter(p_chat != "" | c_chat != "") %>%
-  collect() 
+  collect()
+  
+utterances <- mutate(utterances,order = seq.int(nrow(utterances)))
+
 
 split_utts <- utterances %>%
   gather(person, chat, c(p_chat, c_chat)) %>%
   mutate(person = if_else(person == "p_chat", "Parent", "Child")) %>%
-  group_by(subject, session, person)
+  filter(chat!="") %>%
+  group_by(subject, session) %>%
+  arrange(order)
+
+
+# person <- c('c', 'p', 'p', 'p')
+# chatters <- c('blah', 'flerg', 'hmm', 'wow')
+# df <- data_frame(person, chatters)
+
+findRuns <- function(check, utt, super_utt) {
+  #check ifelse person is same
+  tmp <- ifelse(check == lag(check),  
+              #recursively call function, with lagged arguments and updated super_utt
+               findRuns(lag(check), 
+                          lag(utt), 
+                          paste(super_utt, utt)), 
+              #otherwise, just update the super utt
+               paste(super_utt, utt))
+  #final check, to see if above lines return NA, in which case return unchanged utt
+  ifelse(is.na(tmp), utt, tmp)
+}
+
+flat_utt <- split_utts %>%
+  mutate(new= findRuns(person, utterances, ''))
+# Throws error ??
+
+# findRuns <- function(person,chat, super_utt) {
+#   if (is.na(lag(person))){
+#     return(super_utt)
+#     print('no person!')
+#     count <- 0
+#   }
+#   else if (person==lag(person)) {
+#     super_utt <- paste(super_utt,lag(chat),sep=" ")
+#     print(super_utt)
+#     count <- count + 1
+#     findRuns(lag(person), lag(chat),super_utt)
+#   }
+#   else {
+#     if (count == 0){
+#       super_utt <-lag(chat)
+#       print('no count!')
+#     }
+#     return(super_utt)
+#     count <- 0
+#     print('well at least there\'s a count!')
+#   }
+# }
+
+# split_utts_fixed <- split_utts %>%
+  # mutate(super_chat = findRuns(person, chat, ''))
+# mutate(n_back = findRuns(typedLabel, 0)) %>%
+  
 
 
 # Now want to:
