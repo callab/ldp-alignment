@@ -82,20 +82,30 @@ tokens <- split_utts %>%
 #   bind_cols() 
 
 # ^ asserts the beginning of pattern, $ asserts end; works with regular expressions as well
-present <- map(5:6, function(row) {
+# ~ 15min
+present <- map(1:683, function(row) {
   data_frame(present = grepl(paste0("^",liwc[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
   bind_cols()
-names(present) <- pull(liwc,word)[5:6]
+names(present) <- pull(liwc,word)
 
+tokens_slice <- tokens[1:1000,]
 
+# est time ~107 mins
 long_present <- present %>%
-    slice(1:10) %>%
-  bind_cols(tokens) %>%
+    slice(1:1000) %>%
+  bind_cols(tokens_slice) %>%
   gather(liwc_word, count, names(present)) %>%
   left_join(liwc, by = c("liwc_word" = "word")) %>%
-  group_by(subject, session, person, category) %>%
+  group_by(subject, session, person, category,run) %>%
   summarise(count = sum(count)) %>%
+  arrange(run) %>%
+  group_by(subject,session, category) %>%
+  mutate(lag_count=ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE)))
   
+
+
+# # of base instances
+# # of times a category hit follows another
 
 # Now want to:
 # 1. flatten all successive utterances from the same person
