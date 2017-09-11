@@ -1,14 +1,16 @@
 ---
-title: Linguistic Alignment in LDP
-author: Jo Denby, Ashley Leung, and Dan Yurovksy
-date: "`r Sys.Date()`"
-output: 
+title: "Linguistic Alignment in LDP"
+author: "Jo Denby, Ashley Leung, and Dan Yurovksy"
+date: '`r Sys.Date()`'
+output:
+  pdf_document:
+    toc: no
   html_document:
-    toc: false
-    number_sections: false
-    theme: lumen
-    toc_float: false
     code_folding: show
+    number_sections: no
+    theme: lumen
+    toc: no
+    toc_float: no
 ---
 
 ```{r setup, include = FALSE}
@@ -83,10 +85,10 @@ tokens <- split_utts %>%
 
 # ^ asserts the beginning of pattern, $ asserts end; works with regular expressions as well
 # ~ 15min
-present <- map(1:683, function(row) {
+present <- map(1:10, function(row) {
   data_frame(present = grepl(paste0("^",liwc[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
   bind_cols()
-names(present) <- pull(liwc,word)
+names(present) <- pull(liwc,word)[1:10]
 
 tokens_slice <- tokens[1:1000,]
 
@@ -100,8 +102,13 @@ long_present <- present %>%
   summarise(count = sum(count)) %>%
   arrange(run) %>%
   group_by(subject,session, category) %>%
-  mutate(lag_count=ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE)))
-  
+  mutate(BA=ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE))) %>%
+  mutate(notBA=ifelse(is.na(lag(count)),NA,
+                      ifelse(count>lag(count),count-lag(count),0))) %>%
+  mutate(BnotA=ifelse(is.na(lag(count)),NA,
+                      ifelse(lag(count)>count,lag(count)-count,0))) %>%
+  mutate(notBnotA=ifelse(is.na(lag(count)),NA,
+                         ifelse(lag(count)==0 & count==0,1,0)))
 
 
 # # of base instances
