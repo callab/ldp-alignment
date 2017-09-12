@@ -85,16 +85,16 @@ tokens <- split_utts %>%
 
 # ^ asserts the beginning of pattern, $ asserts end; works with regular expressions as well
 # ~ 15min
-present <- map(1:10, function(row) {
+present <- map(1:30, function(row) {
   data_frame(present = grepl(paste0("^",liwc[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
   bind_cols()
-names(present) <- pull(liwc,word)[1:10]
+names(present) <- pull(liwc,word)[1:30]
 
-tokens_slice <- tokens[1:1000,]
+tokens_slice <- tokens[150000:155000,]
 
 # est time ~107 mins
 long_present <- present %>%
-    slice(1:1000) %>%
+  slice(150000:155000) %>%
   bind_cols(tokens_slice) %>%
   gather(liwc_word, count, names(present)) %>%
   left_join(liwc, by = c("liwc_word" = "word")) %>%
@@ -109,6 +109,24 @@ long_present <- present %>%
                       ifelse(lag(count)>count,lag(count)-count,0))) %>%
   mutate(notBnotA=ifelse(is.na(lag(count)),NA,
                          ifelse(lag(count)==0 & count==0,1,0)))
+
+
+alignment <- long_present %>%
+  mutate_at(vars(BA, notBA, BnotA, notBnotA), 
+            function(x) as.numeric(x > 0)) %>%
+  gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
+  group_by(person, category, measure) %>%
+  summarise(n = sum(value, na.rm = T)) %>% 
+  spread(measure, n) %>%
+  mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
+         B = (BA + BnotA) / (BA + notBA + BnotA + notBnotA),
+         PAB= BA/(BA + BnotA),
+         PAnotB = notBA/(notBA + notBnotA),
+         alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
+  select(person, category, alignment) %>%
+  filter(!is.na(alignment)) %>%
+  View()
+
 
 
 # # of base instances
