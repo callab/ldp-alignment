@@ -21,6 +21,8 @@ library(readr)
 library(stringr)
 library(DT)
 library(tidytext)
+library(RSQLite)
+library(feather)
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
 ```
@@ -76,46 +78,66 @@ tokens <- split_utts %>%
   arrange(run, subject, session) %>%
   group_by(subject, session)
 
-# #WRONG for regular expressions
-# # use grep
-# present <- map(1:3, function(row) {
-#   data_frame(present = tokens$word == as.character(liwc[row, "word"]))
-# }) %>%
-#   bind_cols() 
 
 # ^ asserts the beginning of pattern, $ asserts end; works with regular expressions as well
 # ~ 15min
-present <- map(1:30, function(row) {
+present <- map(1:683, function(row) {
   data_frame(present = grepl(paste0("^",liwc[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
   bind_cols()
-names(present) <- pull(liwc,word)[1:30]
+names(present) <- pull(liwc,word)[1:683]
 
-tokens_slice <- tokens[150000:155000,]
 
-# est time ~107 mins
-long_present <- present %>%
-  slice(150000:155000) %>%
-  bind_cols(tokens_slice) %>%
-  gather(liwc_word, count, names(present)) %>%
-  left_join(liwc, by = c("liwc_word" = "word")) %>%
-  group_by(subject, session, person, category,run) %>%
-  summarise(count = sum(count)) %>%
-  arrange(run) %>%
-  group_by(subject,session, category) %>%
+long_present <- read_feather("~/Documents/ldp-alignment/long_present.feather")
+
+# # est time ~107 mins
+# chunk <- 10000
+# n <- nrow(present)
+# r <- rep(1:ceiling(n/chunk),each=chunk)[1:n]
+# d <- split(present,r)
+# t <- split(tokens,r)
+
+# long_present <- data_frame()
+# 
+# for (j in 1:length(d)) {
+#   tokens_slice <- t[[j]]
+#   
+#   temp <- d[[j]] %>%
+#   bind_cols(tokens_slice) %>%
+#   gather(liwc_word, count, names(present)) %>%
+#   left_join(liwc, by = c("liwc_word" = "word")) %>%
+#   group_by(subject, session, person, category,run) %>%
+#   summarise(count = sum(count)) %>%
+#   arrange(run) %>%
+#   group_by(subject,session, category)
+#   
+#   long_present <- bind_rows(long_present,temp)
+# }
+
+R_lesion_subjs <- subjs %>%
+  filter(lesion=="R") %>%
+  select(id)
+L_lesion_subjs <- subjs %>%
+  filter(lesion=="L") %>%
+  select(id)
+
+long_present <- long_present %>%
   mutate(BA=ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE))) %>%
   mutate(notBA=ifelse(is.na(lag(count)),NA,
                       ifelse(count>lag(count),count-lag(count),0))) %>%
   mutate(BnotA=ifelse(is.na(lag(count)),NA,
                       ifelse(lag(count)>count,lag(count)-count,0))) %>%
   mutate(notBnotA=ifelse(is.na(lag(count)),NA,
-                         ifelse(lag(count)==0 & count==0,1,0)))
+                         ifelse(lag(count)==0 & count==0,1,0))) %>%
+  mutate(lesion=ifelse(subject %in% R_lesion_subjs$id,"R",
+                       ifelse(subject %in% L_lesion_subjs$id,"L",'')))
+  
 
 
-alignment <- long_present %>%
+alignment_agg <- long_present %>%
   mutate_at(vars(BA, notBA, BnotA, notBnotA), 
             function(x) as.numeric(x > 0)) %>%
   gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
-  group_by(person, category, measure) %>%
+  group_by(session, person, measure) %>%
   summarise(n = sum(value, na.rm = T)) %>% 
   spread(measure, n) %>%
   mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
@@ -123,14 +145,34 @@ alignment <- long_present %>%
          PAB= BA/(BA + BnotA),
          PAnotB = notBA/(notBA + notBnotA),
          alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
-  select(person, category, alignment) %>%
-  filter(!is.na(alignment)) %>%
-  View()
+  select(person, session, alignment) %>%
+  filter(!is.na(alignment)) 
 
+ggplot(data=alignment_agg, aes(x=as.factor(session), y=alignment, group=person)) +
+  geom_line(stat='identity', aes(color=person)) + theme_bw() +
+  xlab ('Session') +
+  ylab ('Linguistic Alignment')
 
+alignment_lesion <- long_present %>%
+  mutate_at(vars(BA, notBA, BnotA, notBnotA), 
+            function(x) as.numeric(x > 0)) %>%
+  gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
+  group_by(session, lesion, person, measure) %>%
+  summarise(n = sum(value, na.rm = T)) %>% 
+  spread(measure, n) %>%
+  mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
+         B = (BA + BnotA) / (BA + notBA + BnotA + notBnotA),
+         PAB= BA/(BA + BnotA),
+         PAnotB = notBA/(notBA + notBnotA),
+         alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
+  select(session, person, lesion, alignment) %>%
+  filter(!is.na(alignment)) 
 
-# # of base instances
-# # of times a category hit follows another
+ggplot(data=alignment_lesion, aes(x=as.factor(session), y=alignment, group=interaction(person,lesion) )) +
+  geom_line(stat='identity', aes(color=person, linetype=lesion)) + theme_bw() +
+  xlab ('Session') +
+  ylab ('Linguistic Alignment')+
+  coord_cartesian(ylim=c(0,.15))
 
 # Now want to:
 # 1. flatten all successive utterances from the same person
