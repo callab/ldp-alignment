@@ -23,6 +23,7 @@ library(DT)
 library(tidytext)
 library(RSQLite)
 library(feather)
+library(xlsx)
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
 ```
@@ -81,10 +82,10 @@ tokens <- split_utts %>%
 
 # ^ asserts the beginning of pattern, $ asserts end; works with regular expressions as well
 # ~ 15min
-present <- map(1:683, function(row) {
-  data_frame(present = grepl(paste0("^",liwc[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
-  bind_cols()
-names(present) <- pull(liwc,word)[1:683]
+# present <- map(1:683, function(row) {
+#   data_frame(present = grepl(paste0("^",liwc[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
+#   bind_cols()
+# names(present) <- pull(liwc,word)[1:683]
 
 
 long_present <- read_feather("~/Documents/ldp-alignment/long_present.feather")
@@ -120,6 +121,21 @@ L_lesion_subjs <- subjs %>%
   filter(lesion=="L") %>%
   select(id)
 
+kid_income <- visits %>%
+  group_by(subject) %>%
+  summarise(income = mean(income, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(upper_half = income > median(income, na.rm = T))
+
+demographics <- read.xlsx("~/Desktop/LDP_Alignment/Demographics.xls",1) 
+
+# only education data for 64/166 subjects
+mother_ed <- demographics %>%
+  select(c(subject_number, mother_education)) %>%
+  filter(subject_number==subjs$id)
+
+colnames(mother_ed) <- c('subject','mother_education')
+
 long_present <- long_present %>%
   mutate(BA=ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE))) %>%
   mutate(notBA=ifelse(is.na(lag(count)),NA,
@@ -129,9 +145,12 @@ long_present <- long_present %>%
   mutate(notBnotA=ifelse(is.na(lag(count)),NA,
                          ifelse(lag(count)==0 & count==0,1,0))) %>%
   mutate(lesion=ifelse(subject %in% R_lesion_subjs$id,"R",
-                       ifelse(subject %in% L_lesion_subjs$id,"L",'')))
-  
+                       ifelse(subject %in% L_lesion_subjs$id,"L",''))) %>%
+  left_join(kid_income)
 
+long_present_ed <- long_present %>%
+  filter(subject %in% ed_subjs) %>%
+  left_join(mother_ed)
 
 alignment_agg <- long_present %>%
   mutate_at(vars(BA, notBA, BnotA, notBnotA), 
@@ -152,6 +171,58 @@ ggplot(data=alignment_agg, aes(x=as.factor(session), y=alignment, group=person))
   geom_line(stat='identity', aes(color=person)) + theme_bw() +
   xlab ('Session') +
   ylab ('Linguistic Alignment')
+
+alignment_income <- long_present %>%
+  mutate_at(vars(BA, notBA, BnotA, notBnotA), 
+            function(x) as.numeric(x > 0)) %>%
+  gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
+  group_by(session, upper_half, subject, person, measure) %>%
+  summarise(n = sum(value, na.rm = T)) %>% 
+  spread(measure, n) %>%
+  mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
+         B = (BA + BnotA) / (BA + notBA + BnotA + notBnotA),
+         PAB= BA/(BA + BnotA),
+         PAnotB = notBA/(notBA + notBnotA),
+         alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
+  select(session, person, upper_half, alignment, subject) %>%
+  group_by(upper_half, session, person) %>%
+  filter(!is.na(alignment))
+
+avg_alignment_income <- alignment_income %>%
+  group_by(upper_half, person, session) %>%
+  summarise(sem = sd(alignment)/sqrt(n()), alignment = mean(alignment))
+
+
+ggplot(data=avg_alignment_income, aes(x=as.factor(session),
+                                      y=alignment, group=interaction(person,upper_half),
+                                      color = person,
+                                      fill = person)) +
+  geom_pointrange(aes(ymin = alignment - sem, ymax = alignment + sem)) +
+  geom_ribbon(aes(ymin = alignment - sem, ymax = alignment + sem), alpha = .1) +
+  geom_line(stat='identity', aes(linetype=upper_half)) + theme_bw() +
+  xlab ('Session') +
+  ylab ('Linguistic Alignment')
+
+alignment_ed <- long_present_ed %>%
+  mutate_at(vars(BA, notBA, BnotA, notBnotA), 
+            function(x) as.numeric(x > 0)) %>%
+  gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
+  group_by(session, mother_education, person, measure) %>%
+  summarise(n = sum(value, na.rm = T)) %>% 
+  spread(measure, n) %>%
+  mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
+         B = (BA + BnotA) / (BA + notBA + BnotA + notBnotA),
+         PAB= BA/(BA + BnotA),
+         PAnotB = notBA/(notBA + notBnotA),
+         alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
+  select(session, person, mother_education, alignment) %>%
+  filter(!is.na(alignment)) 
+
+ggplot(data=alignment_ed, aes(x=as.factor(session), y=alignment, group=interaction(person, mother_education))) +
+  geom_line(stat='identity', aes(color=person, linetype=mother_education)) + theme_bw() +
+  xlab ('Session') +
+  ylab ('Linguistic Alignment')+
+  coord_cartesian(ylim=c(0,.15))
 
 alignment_lesion <- long_present %>%
   mutate_at(vars(BA, notBA, BnotA, notBnotA), 
@@ -174,9 +245,9 @@ ggplot(data=alignment_lesion, aes(x=as.factor(session), y=alignment, group=inter
   ylab ('Linguistic Alignment')+
   coord_cartesian(ylim=c(0,.15))
 
-# Now want to:
-# 1. flatten all successive utterances from the same person
-# 2. Count the number of appearances of each target word in each utterances
-# 3. At a lag of one (use the lag function), check if the previous speaker's utterance contained each word
-# 4. aggregate!
+
+#read in demographics data
+#left join mother's education
+#plot with that
+#read through stan tutorial / introductions
 ```

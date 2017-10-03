@@ -20,6 +20,7 @@ model {
   for (n in 1:numLengths) {
 
       lengths[n] ~ exponential(lambda_p[parents[n]);
+    lengths[n] ~ exponential(lambda_p[parents[n]]); // 
   }
 
 }

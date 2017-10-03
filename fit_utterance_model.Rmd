@@ -30,14 +30,23 @@ utterances <- tbl(ldp, "utterances") %>%
 ```
 
 ```{r}
+parentIDs <- rbind(unique(utterances$subject),seq(1,length(unique(utterances$subject)))) %>% # to enumerate parent IDs
+  t() %>%
+  as.data.frame()
+colnames(parentIDs) <- c('subject', 'subject_numeral')
+
+
 one_file_utts <- utterances %>%
-  filter(subject == 22, session == 5) %>%
-  select(p_chat) %>%
-  mutate(length = str_count(p_chat, " "))
-  
+  left_join(parentIDs) %>%
+  filter(!is.na(p_chat)) %>%
+  select(session,p_chat,subject_numeral) %>%
+  mutate(length = str_count(p_chat, " ")) %>%
+  filter(session == 5, subject_numeral == 1)
 
 hist(one_file_utts$length)
 
+numParents <- length(one_file_utts$subject_numeral)
+parents <- one_file_utts$subject_numeral
 numLengths <- length(one_file_utts$length)
 lengths <- one_file_utts$length
 
