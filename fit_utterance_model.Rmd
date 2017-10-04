@@ -15,6 +15,7 @@ library(bayesplot)
 
 ```{r}
 LDP_DIR <- "~/Documents/LDP/ldp.db"
+
 #LDP_DIR <- "~/ldp/data/ldp.db"
 
 # Read in LDP data
@@ -30,7 +31,8 @@ utterances <- tbl(ldp, "utterances") %>%
 ```
 
 ```{r}
-parentIDs <- rbind(unique(utterances$subject),seq(1,length(unique(utterances$subject)))) %>% # to enumerate parent IDs
+# to enumerate parent IDs
+parentIDs <- rbind(unique(utterances$subject),seq(1,length(unique(utterances$subject)))) %>% 
   t() %>%
   as.data.frame()
 colnames(parentIDs) <- c('subject', 'subject_numeral')
@@ -50,7 +52,7 @@ parents <- one_file_utts$subject_numeral
 numLengths <- length(one_file_utts$length)
 lengths <- one_file_utts$length
 
-fit <- stan(file = "utt_length.stan")
+fit <- stan(file = "utt_length.stan", chains = 1)
 
 posterior <- as.matrix(fit)
 
