@@ -2,7 +2,7 @@
 title: "R Notebook"
 output: html_notebook
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 ```{r}
@@ -10,6 +10,10 @@ library(tidyverse)
 library(stringr)
 library(rstan)
 library(bayesplot)
+library(tidyboot)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
 ```
 
 
@@ -38,19 +42,55 @@ parentIDs <- rbind(unique(utterances$subject),seq(1,length(unique(utterances$sub
 colnames(parentIDs) <- c('subject', 'subject_numeral')
 
 
+all_utt_lenghts<- utterances %>%
+  left_join(parentIDs) %>%
+  filter(!is.na(p_chat)) %>%
+  select(session,p_chat,subject_numeral) %>%
+  mutate(length = str_count(p_chat, " ")) %>%
+  filter(length > 0) %>%
+  group_by(session, subject_numeral) %>%
+  summarise(length = mean(length)) %>%
+  summarise(sem = sd(length)/sqrt(n()-1),
+            mean = mean(length))
+
+
+indiv_slopes <- utterances %>%
+  left_join(parentIDs) %>%
+  filter(!is.na(p_chat)) %>%
+  select(session,p_chat,subject_numeral) %>%
+  mutate(length = str_count(p_chat, " ")) %>%
+  filter(length > 0) %>%
+  group_by(subject_numeral, session) %>%
+  summarise(length = mean(length, na.rm = T)) %>%
+  filter(!is.na(length)) %>%
+  group_by(subject_numeral) %>%
+  spread(session, length) %>%
+  mutate(slope = `12` - `1`) %>%
+  filter(!is.na(slope))
+  
+cor.test(indiv_slopes$slope, indiv_slopes$`1`)
+
+
+ggplot(all_utt_lenghts, aes(x = session, y =mean)) + 
+  geom_pointrange(aes(ymin = mean - sem, ymax = mean +sem)) + 
+  geom_line() + 
+  theme(legend.position = "none")
+
+
 one_file_utts <- utterances %>%
   left_join(parentIDs) %>%
   filter(!is.na(p_chat)) %>%
   select(session,p_chat,subject_numeral) %>%
   mutate(length = str_count(p_chat, " ")) %>%
-  filter(session == 5, subject_numeral == 1)
+  filter(length > 0) %>%
+  filter(session == 5, subject_numeral %in% c(1,2,3,4))
 
 hist(one_file_utts$length)
 
-numParents <- length(one_file_utts$subject_numeral)
-parents <- one_file_utts$subject_numeral
+utt_parent <- one_file_utts$subject_numeral
+numParents <- length(unique(utt_parent))
 numLengths <- length(one_file_utts$length)
-lengths <- one_file_utts$length
+utt_length <- one_file_utts$length
 
 fit <- stan(file = "utt_length.stan", chains = 1)
 
@@ -67,11 +107,13 @@ posterior2 <- extract(fit, inc_warmup = TRUE, permuted = FALSE)
 
 
 color_scheme_set("mix-blue-pink")
-p <- mcmc_trace(posterior2,  pars = c("lambda"), n_warmup = 300,
+p <- mcmc_trace(posterior2,  pars = c("lambda", "lambda_p[1]",
+                                      "lambda_p[2]", "lambda_p[3]", "lambda_p[4]"),
+                n_warmup = 300,
                 facet_args = list(nrow = 2, labeller = label_parsed))
 p + facet_text(size = 15)
 
-hypothetical <- rexp(10000, .5)
+hypothetical <- rexp(10000, .25)
 
 
 data_frame(x = seq(.1, 2.1, .1), 

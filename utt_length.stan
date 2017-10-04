@@ -2,8 +2,11 @@ data {
   int<lower=0> numLengths; // amount of utterance lengths
   int<lower=0> numParents;
 
-  vector[numLengths] lengths; // utterance lengths
-  vector[numParents] parents; // parent who uttered
+  //vector[numLengths] utt_length; // utterance lengths
+  //vector[numLengths] utt_parent; // utterance lengths
+
+  int<lower=0> utt_length[numLengths]; // utterance lengths
+  int<lower=0> utt_parent[numLengths]; // utterance lengths
 }
 
 parameters {
@@ -22,9 +25,11 @@ model {
 
 // lambda_p and parents go together by indices - for each parent, a corresponding lambda_p by index
 // then, for each parent/lambda_p, draw for each numLengths
-//  for (n in 1:numLengths) {
-//    lengths[n] ~ exponential(lambda_p[parents[n]]); // 
-//  }
+ for (n in 1:numLengths) {
+   utt_length[n] ~ exponential(lambda_p[utt_parent[n]]); // 
+ }
 
-  lengths ~ exponential(lambda_p); // vectorized form
 }
+
+  //lengths ~ exponential(lambda_p[utt_parent]); // vectorized form
+//}
