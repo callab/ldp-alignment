@@ -102,9 +102,13 @@ fit <- stan(file = "utt_length.stan", chains = 1)
 
 posterior <- as.matrix(fit)
 
+##### DO THIS TO READ IN THE FIT AND EXAMINE USING SHINYSTAN #####
+# for all parents in session 5
 fit_1 <- readRDS("fit_1.rds")
 
 launch_shinystan(fit_1)
+##################################################################
+
 
 # plot_title <- ggtitle("Posterior distributions",
 #                       "with medians and 80% intervals")
