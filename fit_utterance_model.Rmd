@@ -11,6 +11,7 @@ library(stringr)
 library(rstan)
 library(bayesplot)
 library(tidyboot)
+library(shinystan)
 
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
@@ -20,7 +21,7 @@ options(mc.cores = parallel::detectCores())
 ```{r}
 LDP_DIR <- "~/Documents/LDP/ldp.db"
 
-#LDP_DIR <- "~/ldp/data/ldp.db"
+LDP_DIR <- "~/ldp/data/ldp.db"
 
 # Read in LDP data
 ldp <- src_sqlite(LDP_DIR)
@@ -35,12 +36,6 @@ utterances <- tbl(ldp, "utterances") %>%
 ```
 
 ```{r}
-# to enumerate parent IDs
-parentIDs <- rbind(unique(utterances$subject),seq(1,length(unique(utterances$subject)))) %>% 
-  t() %>%
-  as.data.frame()
-colnames(parentIDs) <- c('subject', 'subject_numeral')
-
 
 all_utt_lengths <- utterances %>%
   left_join(parentIDs) %>%
@@ -78,15 +73,25 @@ ggplot(all_utt_lengths, aes(x = session, y =mean)) +
 
 # mean utterance length for parents across development
 
+
+
 one_file_utts <- utterances %>%
-  left_join(parentIDs) %>%
-  filter(!is.na(p_chat) ) %>%
-  select(session,p_chat,subject_numeral) %>%
+  filter(!is.na(p_chat)) %>%
+  select(session,p_chat,subject) %>%
   mutate(length = str_count(p_chat, " ")) %>%
   filter(length > 0) %>%
-  filter(session == 5, subject_numeral %in% c(1,2,3,4))
+  filter(session == 5)
+
+# enumerate parent IDs after filtering so indices match up in stan code
+parentIDs <-  cbind(unique(one_file_utts$subject), seq(1,length(unique(one_file_utts$subject)))) %>%
+  as.data.frame()
+colnames(parentIDs) <- c('subject', 'subject_numeral')
+
+one_file_utts <- one_file_utts %>%
+  left_join(parentIDs)
 
 hist(one_file_utts$length)
+# distribution of utterance lengths
 
 utt_parent <- one_file_utts$subject_numeral
 numParents <- length(unique(utt_parent))
@@ -97,20 +102,23 @@ fit <- stan(file = "utt_length.stan", chains = 1)
 
 posterior <- as.matrix(fit)
 
- 
-plot_title <- ggtitle("Posterior distributions",
-                      "with medians and 80% intervals")
-mcmc_areas(posterior, 
-           pars = c("mu_mean", "sigma_mean", "mu_sd", "sigma_sd"), 
-           prob = 0.8) + plot_title
+fit_1 <- readRDS("fit_1.rds")
+
+launch_shinystan(fit_1)
+
+# plot_title <- ggtitle("Posterior distributions",
+#                       "with medians and 80% intervals")
+# mcmc_areas(posterior, 
+#            pars = c("mu_mean", "mu_over", "mu_p[1]","mu_p[2]","mu_p[3]", "mu_p[4]", "over_p[1]",
+#                     "over_p[2]", "over_p[3]", 'over_p[4]'), 
+#            prob = 0.8) + plot_title
 
 
 posterior2 <- extract(fit, inc_warmup = TRUE, permuted = FALSE)
 
 
 color_scheme_set("mix-blue-pink")
-p <- mcmc_trace(posterior2,  pars = c("mu_mean", "mu_p[1]",
-                                      "mu_p[2]", "mu_p[3]", "mu_p[4]"),
+p <- mcmc_trace(posterior2,  pars = c("betapop", "alphapop", "betapar[1]", "alphapar[1]", "lp__"),
                 n_warmup = 300,
                 facet_args = list(nrow = 2, labeller = label_parsed))
 p + facet_text(size = 15)
@@ -138,16 +146,16 @@ color_scheme_set("red")
 ppc_dens_overlay(y = fit$length, 
                  yrep = posterior_predict(fit, draws = 50))
 
-# fit logistic function to mean utterance length across development
-
-# xmU <- drm(mean ~ session, data = all_utt_lengths, fct = L.3(), type = 'continuous')
-# summary(mU)
-# plot(mU, type = 'all')
-
-
-vals <- extract(fit, pars = c("lp__", "mu_mean", "sigma_mean", "mu_p[1]")) %>%
+vals <- extract(fit, pars = c("alphapar[3]", "alphapar[1]","alphapar[2]", "alphapar[4]", "betapar[1]","betapar[2]","betapar[3]", "betapar[4]")) %>%
   bind_rows() %>%
-  arrange(desc(lp__))
+  summarise_all(mean) %>%
+  gather(parameter, value) %>%
+  separate(parameter, into = c("parameter", "person", sep = "[")) %>%
+  select(-`[`) %>%
+  spread(parameter, value) %>%
+  mutate(mean = alphapar/betapar,
+         var = (alphapar/(betapar^2))*(betapar+1),
+         phi = (mean^2)/(var-mean))
 ```
 
 ```{r}
@@ -159,7 +167,4 @@ T <- ncol(y)
 rats_fit <- stan(file = 'https://raw.githubusercontent.com/stan-dev/example-models/master/bugs_examples/vol1/rats/rats.stan')
 ```
 
-```{r}
-eight <- stan(file = "8schools.stan")
 
-```
