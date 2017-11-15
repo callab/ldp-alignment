@@ -79,8 +79,7 @@ one_file_utts <- utterances %>%
   filter(!is.na(p_chat)) %>%
   select(session,p_chat,subject) %>%
   mutate(length = str_count(p_chat, " ")) %>%
-  filter(length > 0) %>%
-  filter(session == 5)
+  filter(length > 0)
 
 # enumerate parent IDs after filtering so indices match up in stan code
 parentIDs <-  cbind(unique(one_file_utts$subject), seq(1,length(unique(one_file_utts$subject)))) %>%
@@ -107,6 +106,11 @@ posterior <- as.matrix(fit)
 fit_1 <- readRDS("fit_1.rds")
 
 launch_shinystan(fit_1)
+
+# for all parents in all sessions
+fit_big <- readRDS("fit_big.rds")
+
+launch_shinystan(fit_big)
 ##################################################################
 
 
