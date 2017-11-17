@@ -75,6 +75,47 @@ ggplot(all_utt_lengths, aes(x = session, y =mean)) +
 
 
 
+
+  
+
+
+# n_session <- one_file_utts %>%
+#   group_by(subject_numeral, session) %>%
+#   distinct(mean_length) %>%
+#   group_by(subject_numeral) %>%
+#   summarise(n = n()) %>%
+#   filter(n >= 5)
+
+
+# over_disps <- one_file_utts %>%
+#   group_by(subject_numeral, session) %>%
+#   summarise(var_length = var(length),
+#            mean_length = mean(length)) %>%
+#   mutate(overdisp = var_length - mean_length)  %>%
+#   filter(subject_numeral %in% n_session$subject_numeral) %>%
+#   gather(measure, value, mean_length, overdisp)
+
+# pdf("over_disps.pdf", width = 10, height = 10)
+# over_disps %>%
+#   ggplot(aes(x = session, y = value, color = measure,
+#              group = interaction(as.factor(subject_numeral), measure))) +
+#   facet_wrap(~ as.factor(subject_numeral)) +
+#   geom_line() +
+#   geom_smooth(method = "lm", color = "black", size = .1) + 
+#   theme(legend.position = "none")
+# dev.off()
+
+  # one_file_utts %>%
+  # group_by(session, subject_numeral) %>%
+  # distinct(mean_length) %>%
+  # filter(subject_numeral %in% n_session$subject_numeral) %>%
+  # ggplot(aes(x = session, y = mean_length, color = as.factor(subject_numeral),
+  #            group = as.factor(subject_numeral))) +
+  # facet_wrap(~ as.factor(subject_numeral)) +
+  # geom_line() +
+  #   geom_smooth(method = "lm", color = "black") + 
+  # theme(legend.position = "none")
+
 one_file_utts <- utterances %>%
   filter(!is.na(p_chat)) %>%
   select(session,p_chat,subject) %>%
@@ -87,15 +128,22 @@ parentIDs <-  cbind(unique(one_file_utts$subject), seq(1,length(unique(one_file_
 colnames(parentIDs) <- c('subject', 'subject_numeral')
 
 one_file_utts <- one_file_utts %>%
-  left_join(parentIDs)
+  left_join(parentIDs) %>%
+  mutate(mean_length = mean(length)) %>%
+  mutate(session = session - 6) %>%
+  group_by(subject_numeral, session) %>%
+  filter(subject_numeral == 3)
 
-hist(one_file_utts$length)
+plot(one_file_utts[subject_numeral==1]$mean_length)
 # distribution of utterance lengths
 
+######## STAN DATA ########################
 utt_parent <- one_file_utts$subject_numeral
 numParents <- length(unique(utt_parent))
 numLengths <- length(one_file_utts$length)
 utt_length <- one_file_utts$length
+utt_session <- one_file_utts$session
+###########################################
 
 fit <- stan(file = "utt_length.stan", chains = 1)
 
@@ -122,7 +170,7 @@ launch_shinystan(fit_big)
 #            prob = 0.8) + plot_title
 
 
-posterior2 <- extract(fit, inc_warmup = TRUE, permuted = FALSE)
+posterior2 <- extract(fit_big, inc_warmup = TRUE, permuted = FALSE)
 
 
 color_scheme_set("mix-blue-pink")

@@ -7,6 +7,8 @@ data {
 
   int<lower=0> utt_length[numLengths]; // all utterance lengths
   int<lower=0> utt_parent[numLengths]; // parent of specific utterance
+  int<lower=0> utt_session[numLengths]; // session for specfic utterance
+
 }
 
 parameters {
@@ -19,14 +21,12 @@ parameters {
   vector<lower=0>[numParents] mu_p; // for each parent, a mean parameter
   vector<lower=0>[numParents] over_p; // for each parent, an overdispersion parameter
 
-  //real <lower=0> alphapop;
-  //vector <lower=0>[numParents] alphapar;
-
-  //real <lower=0> betapop;
-  //vector <lower=0>[numParents] betapar;
+  vector<lower=0>[numParents] alpha_mean_p; //for each parent, a scalar for mean slope
+  vector<lower=0>[numParents] alpha_over_p; //for each parent, a scalar for overdispersion slope
 }
 
 model {
+
   mu_mean ~ gamma(.01,.01);
   //sigma_mean ~ gamma(.01, .01);
 
@@ -36,28 +36,24 @@ model {
   mu_p ~ gamma(mu_mean, 1);
   over_p ~ gamma(mu_over, 1);
 
-  //alphapop ~ gamma(.001, .001);
-  //alphapar ~ gamma(alphapop, 1);
+  alpha_mean_p ~ normal(mu_p, 1); // scalars representing individual parent slopes
+  alpha_over_p ~ normal(over_p, 1);
 
-  //betapop ~ gamma(.001, .001);
-  //betapar ~ gamma(betapop, 1);
-
-  //for(p in 1:numParents) {  // for each parent, draw a parameter lambda_p and put in vector
-  //                          // lambda_p
-  //  lambda_p[p] ~ normal(lambda, 1); //made up a standard deviation 
-  //}
-  // lambda_p ~ beta(, .01); // vectorized form
-  // beta distribution
-  // want to be basically uniform; gives us alpha for neg_binomial
-
-// lambda_p and parents go together by indices - for each parent, a corresponding lambda_p by index
-// then, for each parent/lambda_p, draw for each numLengths
+ 
  for (n in 1:numLengths) {
-   utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]],over_p[utt_parent[n]]); 
+   // utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]],over_p[utt_parent[n]]); 
+
+   utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]] + alpha_mean_p[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n])
   
-   // utt_length[n] ~ neg_binomial(alphapar[utt_parent[n]], betapar[utt_parent[n]]); // 
  }
 }
+
+// for each cell, a parent and session
+// linear 
+// for each session, drawn from parent's mu plus parent's scalar times sessionnumber
+// scalar is drawn from normal distribution around 0
+// do same thing for overdispersion parameter
+// recode sessions to be equally dispersed around 0
 
 
 
