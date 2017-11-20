@@ -113,7 +113,7 @@ ggplot(all_utt_lengths, aes(x = session, y =mean)) +
   #            group = as.factor(subject_numeral))) +
   # facet_wrap(~ as.factor(subject_numeral)) +
   # geom_line() +
-  #   geom_smooth(method = "lm", color = "black") + 
+  #   geom_smooth(method = "lm", color = "black") +
   # theme(legend.position = "none")
 
 one_file_utts <- utterances %>%
@@ -132,7 +132,7 @@ one_file_utts <- one_file_utts %>%
   mutate(mean_length = mean(length)) %>%
   mutate(session = session - 6) %>%
   group_by(subject_numeral, session) %>%
-  filter(subject_numeral == 3)
+  filter(subject_numeral == 1)
 
 plot(one_file_utts[subject_numeral==1]$mean_length)
 # distribution of utterance lengths
@@ -146,6 +146,8 @@ utt_session <- one_file_utts$session
 ###########################################
 
 fit <- stan(file = "utt_length.stan", chains = 1)
+
+launch_shinystan(fit)
 
 posterior <- as.matrix(fit)
 

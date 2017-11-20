@@ -7,7 +7,7 @@ data {
 
   int<lower=0> utt_length[numLengths]; // all utterance lengths
   int<lower=0> utt_parent[numLengths]; // parent of specific utterance
-  int<lower=0> utt_session[numLengths]; // session for specfic utterance
+  int utt_session[numLengths]; // session for specfic utterance
 
 }
 
@@ -41,10 +41,8 @@ model {
 
  
  for (n in 1:numLengths) {
-   // utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]],over_p[utt_parent[n]]); 
-
-   utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]] + alpha_mean_p[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n])
-  
+  // estimate linear regression with parent mean, parent slope multiplied by session number
+   utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]] + alpha_mean_p[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n]);
  }
 }
 
@@ -54,6 +52,8 @@ model {
 // scalar is drawn from normal distribution around 0
 // do same thing for overdispersion parameter
 // recode sessions to be equally dispersed around 0
+
+// problem with reindexing sessions?
 
 
 
