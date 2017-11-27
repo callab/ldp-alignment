@@ -13,6 +13,8 @@ library(bayesplot)
 library(tidyboot)
 library(shinystan)
 
+library(feather)
+
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 ```
@@ -26,11 +28,14 @@ LDP_DIR <- "~/ldp/data/ldp.db"
 # Read in LDP data
 ldp <- src_sqlite(LDP_DIR)
 
-utterances <- tbl(ldp, "utterances") %>%
-  select(subject, session, line, p_chat, c_chat) %>%
-  filter(p_chat != "" | c_chat != "") %>%
-  collect() %>%
-  mutate(order = 1:n()) 
+# utterances <- tbl(ldp, "utterances") %>%
+#   select(subject, session, line, p_chat, c_chat) %>%
+#   filter(p_chat != "" | c_chat != "") %>%
+#   collect() %>%
+#   mutate(order = 1:n()) 
+
+## DO THIS ##
+utterances <- read_feather("/utterances.feather")
 
 
 ```
@@ -116,6 +121,8 @@ ggplot(all_utt_lengths, aes(x = session, y =mean)) +
   #   geom_smooth(method = "lm", color = "black") +
   # theme(legend.position = "none")
 
+
+## FILTERING AND PREPARING FOR STAN MODEL ##
 one_file_utts <- utterances %>%
   filter(!is.na(p_chat)) %>%
   select(session,p_chat,subject) %>%
@@ -133,6 +140,8 @@ one_file_utts <- one_file_utts %>%
   #mutate(session = session - 6) %>%
   group_by(subject_numeral, session)
 
+############################################
+
 plot(one_file_utts[subject_numeral==1]$mean_length)
 # distribution of utterance lengths
 
@@ -144,7 +153,9 @@ utt_length <- one_file_utts$length
 utt_session <- one_file_utts$session
 ###########################################
 
+## RUN MODEL ##
 fit <- stan(file = "utt_length.stan", chains = 1)
+###############
 
 launch_shinystan(fit)
 
@@ -214,14 +225,4 @@ vals <- extract(fit, pars = c("alphapar[3]", "alphapar[1]","alphapar[2]", "alpha
          var = (alphapar/(betapar^2))*(betapar+1),
          phi = (mean^2)/(var-mean))
 ```
-
-```{r}
-y <- as.matrix(read.table('https://raw.github.com/wiki/stan-dev/rstan/rats.txt', header = TRUE))
-x <- c(8, 15, 22, 29, 36)
-xbar <- mean(x)
-N <- nrow(y)
-T <- ncol(y)
-rats_fit <- stan(file = 'https://raw.githubusercontent.com/stan-dev/example-models/master/bugs_examples/vol1/rats/rats.stan')
-```
-
 
