@@ -7,7 +7,8 @@ data {
 
   int<lower=0> utt_length[numLengths]; // all utterance lengths
   int<lower=0> utt_parent[numLengths]; // parent of specific utterance
-  int utt_session[numLengths]; // session for specfic utterance
+  //int utt_session[numLengths]; // session for specfic utterance
+  vector[numLengths] utt_session; 
 
 }
 
