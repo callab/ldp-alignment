@@ -34,9 +34,9 @@ ldp <- src_sqlite(LDP_DIR)
 #   collect() %>%
 #   mutate(order = 1:n()) 
 
-## DO THIS ##
-utterances <- read_feather("/utterances.feather")
-
+############## UTTERANCES DF ###################
+utterances <- read_feather("utterances.feather")
+################################################
 
 ```
 
@@ -137,7 +137,7 @@ colnames(parentIDs) <- c('subject', 'subject_numeral')
 one_file_utts <- one_file_utts %>%
   left_join(parentIDs) %>%
   mutate(mean_length = mean(length)) %>%
-  #mutate(session = session - 6) %>%
+  mutate(session = session - 6) %>%
   group_by(subject_numeral, session)
 
 ############################################
@@ -171,6 +171,11 @@ launch_shinystan(fit_1)
 fit_big <- readRDS("fit_big.rds")
 
 launch_shinystan(fit_big)
+
+#for all parents - estimate linear model
+fit_really_big <- readRDS("fit_really_big.rds")
+
+launch_shinystan(fit_really_big)
 ##################################################################
 
 
