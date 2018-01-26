@@ -23,8 +23,8 @@ parameters {
   real<lower=0> mu_over; // overall mean overdispersion parameter
   // real<lower=0> sigma_over; // variance for overall overdispersion parameter
 
-  vector<lower=0>[numParents] mu_p; // for each parent, a mean parameter
-  vector[numParents] over_p; // for each parent, an overdispersion parameter
+  real<lower=0>mu_p[numParents]; // for each parent, a mean parameter
+  real over_p[numParents] ; // for each parent, an overdispersion parameter
 
   vector[numParents] alpha_mean_p; //for each parent, a scalar for mean slope
   vector[numParents] alpha_over_p; //for each parent, a scalar for overdispersion slope
@@ -34,19 +34,19 @@ parameters {
 
 transformed parameters {
   
-  //vector<lower=0>[numLengths] mu_p_long; // for each parent a mean length, long form
-  //vector[numLengths] over_p_long; // for each parent a dispersion parameter, long form
+  real<lower=0> mu_p_long[numLengths] ; // for each parent a mean length, long form
+  real over_p_long[numLengths] ; // for each parent a dispersion parameter, long form
 
-  real<lower=0> mu_p_long[numLengths];
-  real over_p_long[numLengths];
+  //real<lower=0> mu_p_long[numLengths];
+  //real over_p_long[numLengths];
   
-  for (p in 1:(numParents-1)) {
-    mu_p_long[parent_indices[p]:(parent_indices[p+1]-1)] <- mu_p[p];
-    over_p_long[parent_indices[p]:(parent_indices[p+1]-1)] <- over_p[p];
+  for (p in 1:(numParents-1)){
+    mu_p_long[parent_indices[p]:(parent_indices[p+1]-1)] = mu_p[p];
+    over_p_long[parent_indices[p]:(parent_indices[p+1]-1)] = over_p[p];
   }
   
-  mu_p_long[parent_indices[numParents]: numLengths] <- mu_p[numParents];
-  over_p_long[parent_indices[numParents]: numLengths] <- mu_p[numParents];
+  mu_p_long[parent_indices[numParents] : numLengths] = mu_p[numParents];
+  over_p_long[parent_indices[numParents] : numLengths] = mu_p[numParents];
 
 }
 
