@@ -34,19 +34,19 @@ parameters {
 
 transformed parameters {
   
-  vector<lower=0>[numLengths] mu_p_long; // for each parent a mean length, long form
-  vector[numLengths] over_p_long; // for each parent a dispersion parameter, long form
-  //need to create vector of parent means & dispersions that updates as sampling occurs
-  //same length as utt_length
-  // i.e., vector of length utt_length that will have the mean utterance length for that parent
+  //vector<lower=0>[numLengths] mu_p_long; // for each parent a mean length, long form
+  //vector[numLengths] over_p_long; // for each parent a dispersion parameter, long form
+
+  real<lower=0> mu_p_long[numLengths];
+  real over_p_long[numLengths];
   
   for (p in 1:(numParents-1)) {
     mu_p_long[parent_indices[p]:(parent_indices[p+1]-1)] <- mu_p[p];
     over_p_long[parent_indices[p]:(parent_indices[p+1]-1)] <- over_p[p];
   }
   
-  //mu_p_long[parent_indices[numParents]:] <- mu_p[numParents];
-  //over_p_long[parent_indices[numParents]:] <- mu_p[numParents];
+  mu_p_long[parent_indices[numParents]: numLengths] <- mu_p[numParents];
+  over_p_long[parent_indices[numParents]: numLengths] <- mu_p[numParents];
 
 }
 
