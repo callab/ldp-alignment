@@ -12,6 +12,7 @@ library(rstan)
 library(bayesplot)
 library(tidyboot)
 library(shinystan)
+library(lme4)
 
 library(feather)
 
@@ -42,6 +43,7 @@ utterances <- read_feather("utterances.feather")
 
 ```{r}
 
+# mean and sd length per session per session per subject
 all_utt_lengths <- utterances %>%
   left_join(parentIDs) %>%
   filter(!is.na(p_chat)) %>%
@@ -52,8 +54,8 @@ all_utt_lengths <- utterances %>%
   summarise(length = mean(length)) %>%
   summarise(sem = sd(length)/sqrt(n()-1),
             mean = mean(length))
-# mean and sd length per session per session per subject
 
+#individual slopes for parents' mean utterance length
 indiv_slopes <- utterances %>%
   left_join(parentIDs) %>%
   filter(!is.na(p_chat)) %>%
@@ -70,35 +72,51 @@ indiv_slopes <- utterances %>%
   
 cor.test(indiv_slopes$slope, indiv_slopes$`1`)
 
-
+# mean utterance length for parents across development
 ggplot(all_utt_lengths, aes(x = session, y =mean)) + 
   geom_pointrange(aes(ymin = mean - sem, ymax = mean +sem)) + 
   geom_line() + 
   theme(legend.position = "none")
 
-# mean utterance length for parents across development
 
+###### DESCRIPTIVE STATISTICS ABOUT EMPIRICAL DATA #########
+#number of sessions for each subject
+n_session <- one_file_utts %>%
+   group_by(subject_numeral, session) %>%
+   distinct(mean_length) %>%
+   group_by(subject_numeral) %>%
+   summarise(n = n()) %>%
+   filter(n >= 5)
 
+#number of subjects for each session
+n_subject <- one_file_utts %>%
+   group_by(subject_numeral, session) %>%
+   distinct(mean_length) %>%
+   group_by(session) %>%
+   summarise(n = n()) %>%
+   filter(n >= 5)  
 
+#empirical overdispersion and mean length per subject per session
+over_disps <- one_file_utts %>%
+   group_by(subject_numeral, session) %>%
+   summarise(var_length = var(length),
+            mean_length = mean(length)) %>% 
+   mutate(overdisp = var_length - mean_length) %>%
+   filter(subject_numeral %in% n_session$subject_numeral) %>%
+   gather(measure, value, mean_length, overdisp)
 
-  
+#overdispersion for each session averaged across subjects
+indiv_over_disps <- over_disps %>%
+  filter(measure == "overdisp") %>%
+  group_by(session, subject_numeral) %>%
+  summarise(overdisp = mean(value)) %>%
+  summarise(overdisp = mean(overdisp))
+ 
+#regression model for overdispersion
+over_disp_lm <- lmer(value ~ session + (1|subject_numeral), data = filter(over_disps, measure == "overdisp"))
 
+############################################################
 
-# n_session <- one_file_utts %>%
-#   group_by(subject_numeral, session) %>%
-#   distinct(mean_length) %>%
-#   group_by(subject_numeral) %>%
-#   summarise(n = n()) %>%
-#   filter(n >= 5)
-
-
-# over_disps <- one_file_utts %>%
-#   group_by(subject_numeral, session) %>%
-#   summarise(var_length = var(length),
-#            mean_length = mean(length)) %>%
-#   mutate(overdisp = var_length - mean_length)  %>%
-#   filter(subject_numeral %in% n_session$subject_numeral) %>%
-#   gather(measure, value, mean_length, overdisp)
 
 # pdf("over_disps.pdf", width = 10, height = 10)
 # over_disps %>%
@@ -138,7 +156,11 @@ one_file_utts <- one_file_utts %>%
   left_join(parentIDs) %>%
   mutate(mean_length = mean(length)) %>%
   mutate(session = session - 6) %>%
-  group_by(subject_numeral, session)
+  group_by(subject_numeral, session) %>%
+  filter(subject_numeral %in% c(1,2)) %>%
+  filter(session %in% c(-1,0,1)) %>%
+  ungroup() 
+
 
 ############################################
 
@@ -151,11 +173,13 @@ numParents <- length(unique(utt_parent))
 numLengths <- length(one_file_utts$length)
 utt_length <- one_file_utts$length
 utt_session <- one_file_utts$session
+parent_indices <- match(unique(utt_parent), utt_parent)
 ###########################################
 
-## RUN MODEL ##
+################ RUN MODEL ################
 fit <- stan(file = "utt_length.stan", chains = 1)
-###############
+###########################################
+
 
 launch_shinystan(fit)
 
@@ -178,6 +202,70 @@ fit_really_big <- readRDS("fit_really_big.rds")
 launch_shinystan(fit_really_big)
 ##################################################################
 
+over_ps <- extract(fit, "alpha_mean_p")$alpha_mean_p %>%
+  as_data_frame() %>%
+  bind_cols(lp = extract(fit, "lp__")$lp__)
+  
+
+
+## Get model summary stats ##
+fit_summary <- summary(fit)
+
+fit_sum_df <- as.data.frame(fit_summary$summary) %>%
+  tibble::rownames_to_column(var = 'par')
+
+parent_over_slopes <- fit_sum_df%>%
+  filter(grepl("^alpha_over_p",fit_sum_df$par)) %>%
+  select(par, mean) %>%
+  mutate(subject_numeral= c(1))
+
+parent_mean_slopes <- fit_sum_df %>%
+  filter(grepl("^alpha_mean_p",fit_sum_df$par)) %>%
+  select(par, mean) 
+  
+parent_mean_intercepts <- fit_sum_df %>%
+  filter(grepl("^mu_p",fit_sum_df$par)) %>%
+  select(par, mean) %>%
+  mutate(subject_numeral = c(1))
+
+parent_overdisp_intercepts <- fit_sum_df %>%
+  filter(grepl("^over_p", fit_sum_df$par)) %>%
+  select(par, mean) %>%
+  mutate(subject_numeral = c(1))
+
+  #mutate(subject_numeral= unique(over_disps$subject_numeral))
+
+#empirical overdispersion and mean length per subject per session
+over_disps <- one_file_utts %>%
+   group_by(subject_numeral, session) %>%
+   summarise(var_length = var(length),
+            mean_length = mean(length)) %>% 
+   mutate(overdisp = ((mean_length)^2)/(var_length - mean_length)) %>%
+   #filter(subject_numeral %in% utt_parent) %>%
+   gather(measure, value, mean_length, overdisp)
+
+#empirical means for parents across sessions of interest
+empirical_means <- over_disps %>%
+  group_by(measure, subject_numeral) %>%
+  #filter(session %in% c(5,6,7)) %>%
+  summarise(value = mean(value, na.rm = T)) %>%
+  mutate(type = "empirical")
+
+parent_stats <- left_join(parent_overdisp_intercepts, parent_mean_intercepts, 'subject_numeral') %>%
+  rename(mean_length = mean.y, 
+         overdisp = mean.x) %>%
+  select(subject_numeral, mean_length, overdisp) %>%
+  gather(measure, value, mean_length, overdisp) %>%
+  mutate(type = "model") %>%
+  bind_rows(empirical_means) %>%
+  spread(type, value)
+  
+
+ggplot(parent_stats, aes(x = model, y = empirical)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  facet_wrap(~ measure, scales = "free")
+#######################
 
 # plot_title <- ggtitle("Posterior distributions",
 #                       "with medians and 80% intervals")

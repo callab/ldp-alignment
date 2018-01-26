@@ -7,7 +7,12 @@ data {
 
   int<lower=0> utt_length[numLengths]; // all utterance lengths
   int<lower=0> utt_parent[numLengths]; // parent of specific utterance
-  vector[numLengths] utt_session; 
+  
+  int utt_session[numLengths];
+
+  //vector[numLengths] utt_session; 
+
+  int<lower=0> parent_indices[numParents]; // vector with parents' indices 
 
 }
 
@@ -19,10 +24,30 @@ parameters {
   // real<lower=0> sigma_over; // variance for overall overdispersion parameter
 
   vector<lower=0>[numParents] mu_p; // for each parent, a mean parameter
-  vector<lower=0>[numParents] over_p; // for each parent, an overdispersion parameter
+  vector[numParents] over_p; // for each parent, an overdispersion parameter
 
-  vector<lower=0>[numParents] alpha_mean_p; //for each parent, a scalar for mean slope
-  vector<lower=0>[numParents] alpha_over_p; //for each parent, a scalar for overdispersion slope
+  vector[numParents] alpha_mean_p; //for each parent, a scalar for mean slope
+  vector[numParents] alpha_over_p; //for each parent, a scalar for overdispersion slope
+
+  
+}
+
+transformed parameters {
+  
+  vector<lower=0>[numLengths] mu_p_long; // for each parent a mean length, long form
+  vector[numLengths] over_p_long; // for each parent a dispersion parameter, long form
+  //need to create vector of parent means & dispersions that updates as sampling occurs
+  //same length as utt_length
+  // i.e., vector of length utt_length that will have the mean utterance length for that parent
+  
+  for (p in 1:(numParents-1)) {
+    mu_p_long[parent_indices[p]:(parent_indices[p+1]-1)] <- mu_p[p];
+    over_p_long[parent_indices[p]:(parent_indices[p+1]-1)] <- over_p[p];
+  }
+  
+  //mu_p_long[parent_indices[numParents]:] <- mu_p[numParents];
+  //over_p_long[parent_indices[numParents]:] <- mu_p[numParents];
+
 }
 
 model {
@@ -33,17 +58,24 @@ model {
   mu_over ~ gamma(.01,.01);
   //sigma_over ~ gamma(.01, .01);
 
-  mu_p ~ gamma(mu_mean, 1);
-  over_p ~ gamma(mu_over, 1);
+  mu_p ~ uniform(0, 10);
+  over_p ~ uniform(0, 10);
 
-  alpha_mean_p ~ normal(mu_p, 1); // scalars representing individual parent slopes
-  alpha_over_p ~ normal(over_p, 1);
+  //mu_p ~ gamma(mu_mean, 1);
+  //over_p ~ gamma(mu_over, 1);
+
+  //alpha_mean_p ~ normal(0, .00001); // scalars representing individual parent slopes
+  //alpha_over_p ~ normal(0, .00001);
 
  
- for (n in 1:numLengths) {
+ //for (n in 1:numLengths) {
   // estimate linear regression with parent mean, parent slope multiplied by session number
-   utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]] + alpha_mean_p[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n]);
- }
+  //utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]] + alpha_mean_p[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n]);
+  //utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]], over_p[utt_parent[n]]);
+
+ //}
+
+ utt_length ~ neg_binomial_2(mu_p_long, over_p_long);
 }
 
 // for each cell, a parent and session
@@ -55,6 +87,13 @@ model {
 
 // problem with reindexing sessions?
 
+// make normal st dev close to 0 to constrain slope
+// try to estimate data itself
+// do for one session
+// compare to empirical findings
+
+
+//vectorized version?
 
 
 
