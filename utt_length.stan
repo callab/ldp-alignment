@@ -8,64 +8,65 @@ data {
   int<lower=0> utt_length[numLengths]; // all utterance lengths
   int<lower=0> utt_parent[numLengths]; // parent of specific utterance
   
-  int utt_session[numLengths];
-
-  //vector[numLengths] utt_session; 
-
-  int<lower=0> parent_indices[numParents]; // vector with parents' indices 
+  vector[numLengths] utt_session;  // session number of each utterance
 
 }
 
 parameters {
-  real<lower=0> mu_mean; // overall mean mean parameter
+  real<lower=0> p_mu_mean; // for parents, overall mean mean parameter
   //real<lower=0> sigma_mean; // variance for overall mean
 
-  real<lower=0> mu_over; // overall mean overdispersion parameter
+  real<lower=0> p_mu_over; // for parents, overall mean overdispersion parameter
   // real<lower=0> sigma_over; // variance for overall overdispersion parameter
 
-  real<lower=0>mu_p[numParents]; // for each parent, a mean parameter
-  real over_p[numParents] ; // for each parent, an overdispersion parameter
+  real<lower=0>mu_p_s[numParents]; // for each parent, a mean parameter, short form
+  real over_p_s[numParents] ; // for each parent, an overdispersion parameter, short form
 
-  vector[numParents] alpha_mean_p; //for each parent, a scalar for mean slope
-  vector[numParents] alpha_over_p; //for each parent, a scalar for overdispersion slope
+  vector[numParents] alpha_mean_p_s; //for each parent, a scalar for mean slope, short form
+  vector[numParents] alpha_over_p_s; //for each parent, a scalar for overdispersion slope, short form
 
   
 }
 
 transformed parameters {
   
-  real<lower=0> mu_p_long[numLengths] ; // for each parent a mean length, long form
-  real over_p_long[numLengths] ; // for each parent a dispersion parameter, long form
-
-  //real<lower=0> mu_p_long[numLengths];
+  //real<lower=0> mu_p_long[numLengths]; // for each parent a mean length, long form 
+  //real over_p_long[numLengths] ; // for each parent a dispersion parameter, long form 
+  //real alpha_mean_p_long[numLengths]; // for each parent, a scalar for mean slope, long form
+  //real alpha_over_p_long[numLengths]; // for each parent, a scalar for overdispersion slope, long form
   //real over_p_long[numLengths];
-  
-  for (p in 1:(numParents-1)){
-    mu_p_long[parent_indices[p]:(parent_indices[p+1]-1)] = mu_p[p];
-    over_p_long[parent_indices[p]:(parent_indices[p+1]-1)] = over_p[p];
+  vector[numLengths] mu_p_long;
+  vector[numLengths] over_p_long;
+  vector[numLengths] alpha_mean_p_long;
+  vector[numLengths] alpha_over_p_long;
+
+
+  for (l in 1:(numLengths)){
+    mu_p_long[l] = mu_p_s[utt_parent[l]];
+    over_p_long[l] = over_p[utt_parent[l]];
+
+    alpha_mean_p_long[l] = alpha_mean_p_s[utt_parent[l]];
+    alpha_over_p_long[l] = alpha_over_p_s[utt_parent[l]];
   }
-  
-  mu_p_long[parent_indices[numParents] : numLengths] = mu_p[numParents];
-  over_p_long[parent_indices[numParents] : numLengths] = mu_p[numParents];
 
 }
 
 model {
 
-  mu_mean ~ gamma(.01,.01);
+  p_mu_mean ~ gamma(.01,.01);
   //sigma_mean ~ gamma(.01, .01);
 
-  mu_over ~ gamma(.01,.01);
+  p_mu_over ~ gamma(.01,.01);
   //sigma_over ~ gamma(.01, .01);
 
-  mu_p ~ uniform(0, 10);
-  over_p ~ uniform(0, 10);
+  mu_p_s ~ uniform(0, 10);
+  over_p_s ~ uniform(0, 10);
 
   //mu_p ~ gamma(mu_mean, 1);
   //over_p ~ gamma(mu_over, 1);
 
-  //alpha_mean_p ~ normal(0, .00001); // scalars representing individual parent slopes
-  //alpha_over_p ~ normal(0, .00001);
+  alpha_mean_p_s ~ normal(0, 1); // scalars representing individual parent slopes
+  alpha_over_p_s ~ normal(0, 1); 
 
  
  //for (n in 1:numLengths) {
@@ -75,7 +76,7 @@ model {
 
  //}
 
- utt_length ~ neg_binomial_2(mu_p_long, over_p_long);
+ utt_length ~ neg_binomial_2(mu_p_long + alpha_mean_p_long .* utt_session, over_p_long + alpha_over_p_long .* utt_session);
 }
 
 // for each cell, a parent and session
@@ -93,7 +94,7 @@ model {
 // compare to empirical findings
 
 
-//vectorized version?
+// do for all parents across session; and kids
 
 
 
