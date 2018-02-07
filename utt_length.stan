@@ -43,7 +43,7 @@ transformed parameters {
 
   for (l in 1:(numLengths)){
     mu_p_long[l] = mu_p_s[utt_parent[l]];
-    over_p_long[l] = over_p[utt_parent[l]];
+    over_p_long[l] = over_p_s[utt_parent[l]];
 
     alpha_mean_p_long[l] = alpha_mean_p_s[utt_parent[l]];
     alpha_over_p_long[l] = alpha_over_p_s[utt_parent[l]];

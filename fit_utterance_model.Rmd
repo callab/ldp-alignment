@@ -157,8 +157,8 @@ one_file_utts <- one_file_utts %>%
   mutate(mean_length = mean(length)) %>%
   mutate(session = session - 6) %>%
   group_by(subject_numeral, session) %>%
-  filter(subject_numeral %in% c(1,2)) %>%
-  filter(session %in% c(-1,0,1)) %>%
+  #filter(subject_numeral %in% c(1,2)) %>%
+  #filter(session %in% c(-1,0,1)) %>%
   ungroup() 
 
 
