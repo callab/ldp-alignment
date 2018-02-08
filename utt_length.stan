@@ -40,6 +40,9 @@ transformed parameters {
   vector[numLengths] alpha_mean_p_long;
   vector[numLengths] alpha_over_p_long;
 
+  vector [numLengths] mu_sample;
+
+   real comp_vector[2];
 
   for (l in 1:(numLengths)){
     mu_p_long[l] = mu_p_s[utt_parent[l]];
@@ -47,7 +50,10 @@ transformed parameters {
 
     alpha_mean_p_long[l] = alpha_mean_p_s[utt_parent[l]];
     alpha_over_p_long[l] = alpha_over_p_s[utt_parent[l]];
-  }
+
+    mu_sample[l] = fmax(mu_p_long[l] + alpha_mean_p_long[l] * utt_session[l], 0.0);
+
+   }
 
 }
 
@@ -76,7 +82,8 @@ model {
 
  //}
 
- utt_length ~ neg_binomial_2(mu_p_long + alpha_mean_p_long .* utt_session, over_p_long + alpha_over_p_long .* utt_session);
+ utt_length ~ neg_binomial_2(mu_sample,
+  over_p_long + alpha_over_p_long .* utt_session);
 }
 
 // for each cell, a parent and session
