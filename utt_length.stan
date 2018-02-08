@@ -51,7 +51,8 @@ transformed parameters {
     alpha_mean_p_long[l] = alpha_mean_p_s[utt_parent[l]];
     alpha_over_p_long[l] = alpha_over_p_s[utt_parent[l]];
 
-    mu_sample[l] = fmax(mu_p_long[l] + alpha_mean_p_long[l] * utt_session[l], 0.0);
+    mu_sample[l] = fmax(mu_p_long[l] + alpha_mean_p_long[l] * utt_session[l], 0.1);
+    over_sample[l] = fmax(over_p_long[l] + alpha_over_p_long[l] * utt_session[l], 0.1);
 
    }
 
@@ -82,8 +83,7 @@ model {
 
  //}
 
- utt_length ~ neg_binomial_2(mu_sample,
-  over_p_long + alpha_over_p_long .* utt_session);
+ utt_length ~ neg_binomial_2(mu_sample, over_sample);
 }
 
 // for each cell, a parent and session
@@ -92,8 +92,6 @@ model {
 // scalar is drawn from normal distribution around 0
 // do same thing for overdispersion parameter
 // recode sessions to be equally dispersed around 0
-
-// problem with reindexing sessions?
 
 // make normal st dev close to 0 to constrain slope
 // try to estimate data itself
@@ -105,4 +103,6 @@ model {
 
 
 
-
+// alignment model
+// try running standard alignment model on LDP data 
+// try acropolis 
