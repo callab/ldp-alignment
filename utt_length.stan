@@ -28,34 +28,34 @@ parameters {
   
 }
 
-transformed parameters {
+//transformed parameters {
   
   //real<lower=0> mu_p_long[numLengths]; // for each parent a mean length, long form 
   //real over_p_long[numLengths] ; // for each parent a dispersion parameter, long form 
   //real alpha_mean_p_long[numLengths]; // for each parent, a scalar for mean slope, long form
   //real alpha_over_p_long[numLengths]; // for each parent, a scalar for overdispersion slope, long form
   //real over_p_long[numLengths];
-  vector[numLengths] mu_p_long;
-  vector[numLengths] over_p_long;
-  vector[numLengths] alpha_mean_p_long;
-  vector[numLengths] alpha_over_p_long;
+  //vector[numLengths] mu_p_long;
+  //vector[numLengths] over_p_long;
+  //vector[numLengths] alpha_mean_p_long;
+  //vector[numLengths] alpha_over_p_long;
 
-  vector [numLengths] mu_sample;
-  vector [numLengths] over_sample;
+  //vector [numLengths] mu_sample;
+  //vector [numLengths] over_sample;
 
-  for (l in 1:(numLengths)){
-    mu_p_long[l] = mu_p_s[utt_parent[l]];
-    over_p_long[l] = over_p_s[utt_parent[l]];
+  //for (l in 1:(numLengths)){
+    //mu_p_long[l] = mu_p_s[utt_parent[l]];
+    //over_p_long[l] = over_p_s[utt_parent[l]];
 
-    alpha_mean_p_long[l] = alpha_mean_p_s[utt_parent[l]];
-    alpha_over_p_long[l] = alpha_over_p_s[utt_parent[l]];
+    //alpha_mean_p_long[l] = alpha_mean_p_s[utt_parent[l]];
+    //alpha_over_p_long[l] = alpha_over_p_s[utt_parent[l]];
 
-    mu_sample[l] = fmax(mu_p_long[l] + alpha_mean_p_long[l] * utt_session[l], 0.1);
-    over_sample[l] = fmax(over_p_long[l] + alpha_over_p_long[l] * utt_session[l], 0.1);
+    //mu_sample[l] = fmax(mu_p_long[l] + alpha_mean_p_long[l] * utt_session[l], 0.1);
+    //over_sample[l] = fmax(over_p_long[l] + alpha_over_p_long[l] * utt_session[l], 0.1);
 
-   }
+   //}
 
-}
+//}
 
 model {
 
@@ -75,14 +75,14 @@ model {
   alpha_over_p_s ~ normal(0, 1); 
 
  
- //for (n in 1:numLengths) {
+ for (n in 1:numLengths) {
   // estimate linear regression with parent mean, parent slope multiplied by session number
-  //utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]] + alpha_mean_p[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n]);
+  utt_length[n] ~ neg_binomial_2(mu_p_s[utt_parent[n]] + alpha_mean_p_s[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n]);
   //utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]], over_p[utt_parent[n]]);
 
  //}
 
- utt_length ~ neg_binomial_2(mu_sample, over_sample);
+ //utt_length ~ neg_binomial_2(mu_sample, over_sample);
 }
 
 // for each cell, a parent and session
