@@ -41,8 +41,7 @@ transformed parameters {
   vector[numLengths] alpha_over_p_long;
 
   vector [numLengths] mu_sample;
-
-   real comp_vector[2];
+  vector [numLengths] over_sample;
 
   for (l in 1:(numLengths)){
     mu_p_long[l] = mu_p_s[utt_parent[l]];
