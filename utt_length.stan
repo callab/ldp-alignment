@@ -77,7 +77,7 @@ model {
  
  for (n in 1:numLengths) {
   // estimate linear regression with parent mean, parent slope multiplied by session number
-  utt_length[n] ~ neg_binomial_2(mu_p_s[utt_parent[n]] + alpha_mean_p_s[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n]);
+  utt_length[n] ~ neg_binomial_2(mu_p_s[utt_parent[n]] + alpha_mean_p_s[utt_parent[n]] * utt_session[n], over_p_s[utt_parent[n]] + alpha_over_p_s[utt_parent[n]] * utt_session[n]);
   //utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]], over_p[utt_parent[n]]);
 
  //}
