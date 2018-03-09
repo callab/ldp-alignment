@@ -20,7 +20,11 @@ parameters {
   // real<lower=0> sigma_over; // variance for overall overdispersion parameter
 
   real<lower=0>mu_p_s[numParents]; // for each parent, a mean parameter, short form
+<<<<<<< HEAD
   rea<lower=0>over_p_s[numParents] ; // for each parent, an overdispersion parameter, short form
+=======
+  real<lower=0>over_p_s[numParents] ; // for each parent, an overdispersion parameter, short form
+>>>>>>> dd88d48c0729a1f0fdb8fbabb7a147057f2bfc65
 
   vector<lower=0>[numParents] alpha_mean_p_s; //for each parent, a scalar for mean slope, short form
   vector<lower=0>[numParents] alpha_over_p_s; //for each parent, a scalar for overdispersion slope, short form

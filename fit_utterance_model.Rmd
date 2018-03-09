@@ -12,6 +12,7 @@ library(rstan)
 library(bayesplot)
 library(tidyboot)
 library(shinystan)
+library(dplyr)
 library(lme4)
 
 library(feather)
@@ -37,6 +38,7 @@ ldp <- src_sqlite(LDP_DIR)
 
 ############## UTTERANCES DF ###################
 utterances <- read_feather("utterances.feather")
+utterances <- read.csv('utterances.csv')
 ################################################
 
 ```
@@ -155,7 +157,7 @@ colnames(parentIDs) <- c('subject', 'subject_numeral')
 one_file_utts <- one_file_utts %>%
   left_join(parentIDs) %>%
   mutate(mean_length = mean(length)) %>%
-  mutate(session = session - 6) %>%
+#  mutate(session = session - 6) %>%
   group_by(subject_numeral, session) %>%
   #filter(subject_numeral %in% c(1,2)) %>%
   #filter(session %in% c(-1,0,1)) %>%
@@ -173,7 +175,6 @@ numParents <- length(unique(utt_parent))
 numLengths <- length(one_file_utts$length)
 utt_length <- one_file_utts$length
 utt_session <- one_file_utts$session
-parent_indices <- match(unique(utt_parent), utt_parent)
 ###########################################
 
 ################ RUN MODEL ################
