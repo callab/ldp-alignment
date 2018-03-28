@@ -216,23 +216,24 @@ fit_sum_df <- as.data.frame(fit_summary$summary) %>%
   tibble::rownames_to_column(var = 'par')
 
 parent_over_slopes <- fit_sum_df%>%
-  filter(grepl("^alpha_over_p",fit_sum_df$par)) %>%
+  filter(grepl("^alpha_over_p_s",fit_sum_df$par)) %>%
   select(par, mean) %>%
-  mutate(subject_numeral= c(1))
+  mutate(subject_numeral= seq.int(n()))
 
 parent_mean_slopes <- fit_sum_df %>%
-  filter(grepl("^alpha_mean_p",fit_sum_df$par)) %>%
-  select(par, mean) 
+  filter(grepl("^alpha_mean_p_s",fit_sum_df$par)) %>%
+  select(par, mean) %>%
+  mutate(subject_numeral= seq.int(n()))
   
 parent_mean_intercepts <- fit_sum_df %>%
-  filter(grepl("^mu_p",fit_sum_df$par)) %>%
+  filter(grepl("^mu_p_s",fit_sum_df$par)) %>%
   select(par, mean) %>%
-  mutate(subject_numeral = c(1))
+  mutate(subject_numeral= seq.int(n()))
 
 parent_overdisp_intercepts <- fit_sum_df %>%
-  filter(grepl("^over_p", fit_sum_df$par)) %>%
+  filter(grepl("^over_p_s", fit_sum_df$par)) %>%
   select(par, mean) %>%
-  mutate(subject_numeral = c(1))
+  mutate(subject_numeral= seq.int(n()))
 
   #mutate(subject_numeral= unique(over_disps$subject_numeral))
 
@@ -252,6 +253,7 @@ empirical_means <- over_disps %>%
   summarise(value = mean(value, na.rm = T)) %>%
   mutate(type = "empirical")
 
+
 parent_stats <- left_join(parent_overdisp_intercepts, parent_mean_intercepts, 'subject_numeral') %>%
   rename(mean_length = mean.y, 
          overdisp = mean.x) %>%
@@ -261,7 +263,7 @@ parent_stats <- left_join(parent_overdisp_intercepts, parent_mean_intercepts, 's
   bind_rows(empirical_means) %>%
   spread(type, value)
   
-
+### PLOT MODEL ESTIMATES AGAINST EMPIRICAL FINDINGS
 ggplot(parent_stats, aes(x = model, y = empirical)) + 
   geom_point() + 
   geom_smooth(method = "lm") + 
