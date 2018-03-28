@@ -48,10 +48,10 @@ transformed parameters {
 
 model {
 
-  mu_mean ~ gamma(.01,.01);
+  c_mu_mean ~ gamma(.01,.01);
   //sigma_mean ~ gamma(.01, .01);
 
-  mu_over ~ gamma(.01,.01);
+  c_mu_over ~ gamma(.01,.01);
   //sigma_over ~ gamma(.01, .01);
 
   mu_c_s ~ uniform(0, 10);
