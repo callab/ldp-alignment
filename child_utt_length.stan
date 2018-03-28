@@ -29,29 +29,29 @@ parameters {
   
 }
 
-transformed parameters {
-  vector[numLengths] mu_c_long; // for each child a mean length, long form 
-  vector[numLengths] over_c_long; // for each child a dispersion parameter, long form 
-  vector[numLengths] alpha_mean_c_long; // for each child, a scalar for mean slope, long form
-  vector[numLengths] alpha_over_c_long;  // for each child, a scalar for overdispersion slope, long form
+// transformed parameters {
+//   vector[numLengths] mu_c_long; // for each child a mean length, long form 
+//   vector[numLengths] over_c_long; // for each child a dispersion parameter, long form 
+//   vector[numLengths] alpha_mean_c_long; // for each child, a scalar for mean slope, long form
+//   vector[numLengths] alpha_over_c_long;  // for each child, a scalar for overdispersion slope, long form
 
 
-  for (l in 1:(numLengths)){
-    mu_c_long[l] = mu_c_s[utt_child[l]];
-    over_c_long[l] = over_c_s[utt_child[l]];
+//   for (l in 1:(numLengths)){
+//     mu_c_long[l] = mu_c_s[utt_child[l]];
+//     over_c_long[l] = over_c_s[utt_child[l]];
 
-    alpha_mean_c_long[l] = alpha_mean_c_s[utt_child[l]];
-    alpha_over_c_long[l] = alpha_over_c_s[utt_child[l]];
-  }
+//     alpha_mean_c_long[l] = alpha_mean_c_s[utt_child[l]];
+//     alpha_over_c_long[l] = alpha_over_c_s[utt_child[l]];
+//   }
 
-}
+// }
 
 model {
 
-  mu_mean ~ gamma(.01,.01);
+  c_mu_mean ~ gamma(.01,.01);
   //sigma_mean ~ gamma(.01, .01);
 
-  mu_over ~ gamma(.01,.01);
+  c_mu_over ~ gamma(.01,.01);
   //sigma_over ~ gamma(.01, .01);
 
   mu_c_s ~ uniform(0, 10);
@@ -64,14 +64,18 @@ model {
   alpha_over_c_s ~ normal(0, 1); 
 
  
- //for (n in 1:numLengths) {
-  // estimate linear regression with parent mean, parent slope multiplied by session number
-  //utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]] + alpha_mean_p[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n]);
-  //utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]], over_p[utt_parent[n]]);
+ // for (n in 1:numLengths) {
+ //  estimate linear regression with parent mean, parent slope multiplied by session number
+ //  utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]] + alpha_mean_p[utt_parent[n]] * utt_session[n], over_p[utt_parent[n]] + alpha_over_p[utt_parent[n]] * utt_session[n]);
+ //  utt_length[n] ~ neg_binomial_2(mu_p[utt_parent[n]], over_p[utt_parent[n]]);
 
- //}
+ // }
+ for (n in 1:numLengths) {
+    utt_length[n] ~ neg_binomial_2(mu_c_s[utt_child[n]] + alpha_mean_c_s[utt_child[n]] * utt_session[n], over_c_s[utt_child[n]] + alpha_over_c_s[utt_child[n]] * utt_session[n]);
 
- utt_length ~ neg_binomial_2(mu_c_long + alpha_mean_c_long .* utt_session, over_c_long + alpha_over_c_long .* utt_session);
+ }
+
+ // utt_length ~ neg_binomial_2(mu_c_long + alpha_mean_c_long .* utt_session, over_c_long + alpha_over_c_long .* utt_session);
 }
 
 // for each cell, a child and session
