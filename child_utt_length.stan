@@ -21,10 +21,10 @@ parameters {
   // real<lower=0> sigma_over; // variance for overall overdispersion parameter
 
   real<lower=0>mu_c_s[numChildren]; // for each child, a mean parameter
-  real over_c_s[numChildren] ; // for each child, an overdispersion parameter
+  real <lower=0>over_c_s[numChildren] ; // for each child, an overdispersion parameter
 
-  vector[numChildren] alpha_mean_c_s; //for each child, a scalar for mean slope
-  vector[numChildren] alpha_over_c_s; //for each child, a scalar for overdispersion slope
+  vector<lower=0>[numChildren] alpha_mean_c_s; //for each child, a scalar for mean slope
+  vector<lower=0>[numChildren] alpha_over_c_s; //for each child, a scalar for overdispersion slope
 
   
 }
