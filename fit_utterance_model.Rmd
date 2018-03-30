@@ -157,7 +157,7 @@ colnames(parentIDs) <- c('subject', 'subject_numeral')
 one_file_utts <- one_file_utts %>%
   left_join(parentIDs) %>%
   mutate(mean_length = mean(length)) %>%
-#  mutate(session = session - 6) %>%
+  mutate(session = session - 6) %>%
   group_by(subject_numeral, session) %>%
   #filter(subject_numeral %in% c(1,2)) %>%
  # filter(session %in% c(1,2,3)) %>%
@@ -178,7 +178,12 @@ utt_session <- one_file_utts$session
 ###########################################
 
 ################ RUN MODEL ################
-fit <- stan(file = "utt_length.stan", chains = 1)
+param_init <- function(){
+  list(p_mu_mean = 5, p_mu_over=2, mu_p_s = rep(c(6), numParents), over_p_s = rep(c(5), numParents), 
+       alpha_mean_p_group = 3, alpha_over_p_group = 2, alpha_mean_p_s = rep(c(1), numParents), 
+       alpha_over_p_s = rep(c(.01), numParents))
+}
+fit <- stan(file = "utt_length.stan", chains = 1, init = param_init)
 ###########################################
 
 

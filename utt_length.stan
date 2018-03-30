@@ -23,6 +23,9 @@ parameters {
 
   real<lower=0>over_p_s[numParents] ; // for each parent, an overdispersion parameter, short form
 
+  real<lower=0>alpha_mean_p_group;
+  real<lower=0>alpha_over_p_group;
+
   vector<lower=0>[numParents] alpha_mean_p_s; //for each parent, a scalar for mean slope, short form
   vector<lower=0>[numParents] alpha_over_p_s; //for each parent, a scalar for overdispersion slope, short form
 
@@ -66,14 +69,17 @@ model {
   p_mu_over ~ gamma(.01,.01);
   //sigma_over ~ gamma(.01, .01);
 
-  mu_p_s ~ uniform(0, 10);
-  over_p_s ~ uniform(0, 10);
+  mu_p_s ~ normal(p_mu_mean, 4);
+  over_p_s ~ normal(p_mu_over, 4);
 
   //mu_p ~ gamma(mu_mean, 1);
   //over_p ~ gamma(mu_over, 1);
 
-  alpha_mean_p_s ~ normal(1, 1); // scalars representing individual parent slopes
-  alpha_over_p_s ~ normal(1, 1); 
+  alpha_mean_p_group ~ gamma(.01, .01);
+  alpha_over_p_group ~ gamma(.01, .01); 
+
+  alpha_mean_p_s ~ normal(alpha_mean_p_group, 1); // scalars representing individual parent slopes
+  alpha_over_p_s ~ normal(alpha_over_p_group, 1); 
 
  
  for (n in 1:numLengths) {
