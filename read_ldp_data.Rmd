@@ -90,6 +90,8 @@ tokens <- split_utts %>%
 
 long_present <- read_feather("~/Documents/ldp-alignment/long_present.feather")
 
+long_present<-read_feather("long_present.feather")
+
 # # est time ~107 mins
 # chunk <- 10000
 # n <- nrow(present)
