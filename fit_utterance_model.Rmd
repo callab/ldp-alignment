@@ -208,7 +208,7 @@ fit_really_big <- readRDS("fit_really_big.rds")
 launch_shinystan(fit_really_big)
 ##################################################################
 
-over_ps <- extract(fit, "alpha_mean_p")$alpha_mean_p %>%
+over_ps <- extract(fit, "alpha_mean_p_s")$alpha_mean_p_s %>%
   as_data_frame() %>%
   bind_cols(lp = extract(fit, "lp__")$lp__)
   

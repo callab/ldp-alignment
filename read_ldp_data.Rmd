@@ -92,6 +92,40 @@ long_present <- read_feather("~/Documents/ldp-alignment/long_present.feather")
 
 long_present<-read_feather("long_present.feather")
 
+## NEED TO REORDER AND REDO ALIGNMENT COMPUTATION ##
+long_present <- long_present %>%
+  arrange(subject,session,category,run) 
+  #mutate(
+   # na_val = case_when(category == lag(category) ~ "good"))
+    
+
+
+
+long_present <- long_present %>%
+  mutate(
+    BA = case_when(
+      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE))))) %>%
+  mutate(
+    notBA = case_when(
+      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
+                      ifelse(count>lag(count),count-lag(count),0))))) %>%
+  mutate(
+    BnotA = case_when(
+      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
+                      ifelse(lag(count)>count,lag(count)-count,0))))) %>%
+  mutate(
+    notBnotA = case_when(
+      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
+                         ifelse(lag(count)==0 & count==0,1,0)))))
+
+
+
+
+
+
+
+####################################################
+
 # # est time ~107 mins
 # chunk <- 10000
 # n <- nrow(present)
