@@ -95,9 +95,6 @@ long_present<-read_feather("long_present.feather")
 ## NEED TO REORDER AND REDO ALIGNMENT COMPUTATION ##
 long_present <- long_present %>%
   arrange(subject,session,category,run) 
-  #mutate(
-   # na_val = case_when(category == lag(category) ~ "good"))
-    
 
 
 
@@ -119,9 +116,21 @@ long_present <- long_present %>%
                          ifelse(lag(count)==0 & count==0,1,0)))))
 
 
+liwc_markers <- as.numeric(as.factor(unique(liwc$category)))
 
-
-
+###  STAN DATA ####
+NumMarkers <- length(unique(liwc$category))
+NumSubPops <- length(unique(long_present$person))
+NumObservations <- dim(long_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(long_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- long_present$session
+MarkerType <- as.numeric(as.factor(long_present$category)) #see liwc_markers
+NumUtterancesAB <- rep(sum(long_present$notBA, na.rm=TRUE) + sum(long_present$notBnotA, na.rm=TRUE), NumObservations)
+NumUtterancesNotAB <- rep(sum(long_present$BA, na.rm=TRUE) + sum(long_present$BnotA, na.rm=TRUE), NumObservations)
+CountsAB <- rep(sum(long_present$notBA, na.rm=TRUE), NumObservations)
+CountsNotAB <- rep(sum(long_present$BA, na.rm = TRUE),NumObservations)
+StdDev <- 1
+###################
 
 
 ####################################################
