@@ -24,15 +24,21 @@ library(tidytext)
 library(RSQLite)
 library(feather)
 library(xlsx)
+library(rstan)
+library(zoo)
+
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
 ```
 
 
 Read in LDP data. Don't display in public repo
 ```{r read_ldp}
-LDP_DIR <- "~/Documents/LDP/ldp.db"
-#LDP_DIR <- "~/ldp/data/ldp.db"
+#LDP_DIR <- "~/Documents/LDP/ldp.db"
+LDP_DIR <- "~/ldp/data/ldp.db"
 
 # Read in LDP data
 ldp <- src_sqlite(LDP_DIR)
@@ -46,6 +52,12 @@ visits <- tbl(ldp, "visits") %>%
   collect() %>%
   select(subject, session, date, child_age, child_age_years, child_age_months,
          income, mother_education, father_education)
+
+# subj by income info
+subj_income <- visits %>%
+  select(subject,session, income) %>%
+  tidyr::fill(income) %>%
+  unique()
 ```
 
 Read in LIWC Categories
@@ -131,6 +143,8 @@ CountsAB <- rep(sum(long_present$notBA, na.rm=TRUE), NumObservations)
 CountsNotAB <- rep(sum(long_present$BA, na.rm = TRUE),NumObservations)
 StdDev <- 1
 ###################
+fit <- stan(file = "twitter_align.stan", chains = 1)
+
 
 
 ####################################################

@@ -1,3 +1,4 @@
+
 data {
   int<lower=0> NumMarkers;                              #Number of marker categories in data
   int<lower=0> NumSubPops;                              #Number of groups in the data
