@@ -1,0 +1,127 @@
+---
+title: "multinomial_model_work"
+author: "Joseph Denby"
+date: "11/12/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(data.table)
+library(tidyverse)
+library(readr)
+library(stringr)
+library(DT)
+library(tidytext)
+library(RSQLite)
+library(feather)
+library(xlsx)
+library(rstan)
+library(zoo)
+library(shinystan)
+
+opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+               error = FALSE, cache = TRUE, tidy = FALSE)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+
+```{r read_liwc}
+liwc <- read_tsv("../word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
+  rename(word = X1, category = X2)
+```
+
+```{r Double Counted LIWC Words}
+liwc %>% 
+  group_by(word) %>% 
+  mutate(n=n()) %>% 
+  filter(n>1) %>% 
+  View()
+
+```
+
+```{r Load Data}
+together_present <- read_feather('together_present.feather')
+
+together_present <- read_csv('together_present.csv')
+
+together_df <- read_csv('together_df.csv')
+```
+
+```{r Optional Filtering}
+### For one LIWC category model
+together_present <- together_present %>% 
+  mutate(not_ipron = article + certain + conj + discrep + excl + i + incl + negate + 
+           preps + quant + tentat + we + you + null) %>% 
+  select(session, subject, person, lag_ipron, ipron, not_ipron) %>% 
+  filter(session == 5,
+         subject == 22,
+         person == 'Child')
+
+LiwcCounts <- together_present %>% 
+  select(ipron, not_ipron) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  select(lag_ipron) %>% 
+  as.matrix()
+
+##### For full LIWC categories model
+together_present <- together_present %>%
+  filter(session ==5,
+         subject == 22,
+         person == "Child")
+
+```
+
+```{r Aggregate Stan Data (for one LIWC Category Model)}
+
+liwc_markers <- names(together_present)[5]
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(together_present$session)
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- together_present$session
+StdDev <- 1
+
+```
+
+```{r Aggregate Stan Data (for full LIWC Category Models)}
+liwc_markers <- names(together_present)[18:31]
+lag_markers <- names(together_present)[4:17]
+
+LiwcCounts <- together_present %>% 
+  ungroup() %>%
+  select(one_of(liwc_markers), null) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  ungroup() %>% 
+  select(one_of(lag_markers)) %>% 
+  as.matrix()
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(together_present$session)
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- together_present$session
+StdDev <- 1
+
+```
+
+```{r Fit No Age Multi Stan Model}
+fit <- stan('noage_multinomial_alignment.stan', chains =1)
+```
+
+```{r Fit Age Multi Stan Model}
+fit <- stan('multinomial_alignment.stan', chains = 1)
+```
+
+```{r View Stan Fit}
+launch_shinystan(fit)
+```
+
