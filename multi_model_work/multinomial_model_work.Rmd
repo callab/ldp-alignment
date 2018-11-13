@@ -43,6 +43,10 @@ liwc %>%
 
 ```{r Load Data}
 together_present <- read_feather('together_present.feather')
+
+together_present <- read_csv('together_present.csv')
+
+together_df <- read_csv('together_df.csv')
 ```
 
 ```{r Optional Filtering}

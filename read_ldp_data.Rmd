@@ -41,6 +41,7 @@ Read in LDP data. Don't display in public repo
 LDP_DIR <- "~/ldp/data/ldp.db"
 
 # Read in LDP data
+
 ldp <- src_sqlite(LDP_DIR)
 
 # Get all participants
@@ -104,12 +105,64 @@ long_present <- read_feather("~/Documents/ldp-alignment/long_present.feather")
 
 long_present<-read_feather("long_present.feather")
 
+
+
+
 ## NEED TO REORDER AND REDO ALIGNMENT COMPUTATION ##
 long_present <- long_present %>%
   arrange(subject,session,category,run) 
+```
+
+```{r Get LIWC counts}
+split_utts <- split_utts %>% 
+  mutate(length = str_count(chat, ' '))
+
+long_present <- long_present %>% 
+  unique(by=c("subject", "session", "person", "category", "run")) %>% 
+  spread(category,count, fill = 0) 
+
+together_present <- long_present %>%
+  left_join(split_utts, by=c('subject','session','run','person'))
+
+together_present <- together_present %>% 
+  na.omit() %>% 
+  select(-BA,-notBA,-BnotA, -notBnotA, -chat) %>% 
+  mutate(null = length - (article + certain + conj + discrep + excl + i + incl + 
+                            ipron + negate + preps + quant + tentat + we + you )) %>% 
+  mutate(null = case_when(null > 0 ~ null,
+                          TRUE ~ 0))
 
 
+  
 
+together_present <- together_present %>%
+  select(subject, session, person, article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
+         quant, tentat, we, you, length, null) %>%
+  mutate(lag_article = lag(article), lag_certain = lag(certain),
+         lag_conj = lag(conj), lag_conj = lag(discrep), lag_excl = lag(excl),
+         lag_i = lag(i), lag_incl = lag(incl), lag_ipron = lag(ipron),
+         lag_negate = lag(negate), lag_preps = lag(preps), lag_quant = lag(quant),
+         lag_tentat = lag(tentat), lag_we = lag(we), lag_you = lag(you)) %>%
+  group_by(subject, session, person, lag_article, lag_certain, lag_conj,
+           lag_excl,
+           lag_i,
+           lag_incl,
+           lag_ipron,
+           lag_negate,
+           lag_preps,
+           lag_quant,
+           lag_tentat,
+           lag_we,
+           lag_you) %>%
+  summarise_at(vars(article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
+         quant, tentat, we, you, null), sum)
+
+
+write_feather(together_present,'together_present.feather')
+```
+
+
+```{r}
 long_present <- long_present %>%
   mutate(
     BA = case_when(
