@@ -34,3 +34,6 @@ vignettes/*.pdf
 
 # OSX Stuff
 .DS_Store
+
+# .dat files
+.dat
