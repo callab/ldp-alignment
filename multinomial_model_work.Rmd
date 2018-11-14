@@ -33,8 +33,18 @@ liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
 ```
 
 ```{r Double Counted LIWC Words}
-liwc %>% 
-  group_by(word) %>% 
+multi_liwcs <- liwc %>% 
+  group_by(word) %>%
+  summarise(n = n()) %>%
+  filter(n > 1)
+
+liwc %>%
+  filter(word %in% multi_liwcs$word) %>%
+  distinct(word, category) %>%
+  group_by(category) %>%
+  summarise(n = n())
+
+  distinct(word, category) %>%
   mutate(n=n()) %>% 
   filter(n>1) %>% 
   View()
@@ -74,6 +84,43 @@ together_present <- together_present %>%
 ```{r Aggregate Stan Data (for one LIWC Category Model)}
 
 liwc_markers <- names(together_present)[5]
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(together_present$session)
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- together_present$session
+StdDev <- 1
+
+```
+
+
+```{r Optional Filtering}
+### For one LIWC category model
+together_present <- together_present %>% 
+  mutate(null = article + certain + conj + discrep + excl + i + incl + negate + 
+           preps +  tentat + we + you + null) %>% 
+  select(session, subject, person, lag_ipron, ipron, null, quant, lag_quant) %>% 
+  filter(session == 5,
+         subject == 22,
+         person == 'Child')
+
+LiwcCounts <- together_present %>% 
+  select(ipron, quant, null) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  select(lag_ipron, lag_quant) %>% 
+  as.matrix()
+
+```
+
+
+```{r Aggregate Stan Data (for two LIWC Category Model)}
+
+liwc_markers <- names(together_present)[c(5,7)]
+lag_markers <- names(together_present)[c(4,8)]
 
 NumMarkers <- length(liwc_markers)
 MidAge <- median(together_present$session)
@@ -130,7 +177,7 @@ predicted_data %>%
 ```
 
 ```{r Fit No Age Multi Stan Model}
-fit <- stan('stanfits/noage_multinomial_alignment.stan', chains =1)
+fit <- stan('stan_models/noage_multinomial_alignment.stan', chains =1)
 ```
 
 ```{r Fit Age Multi Stan Model}

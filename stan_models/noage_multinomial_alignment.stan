@@ -61,6 +61,7 @@ transformed parameters {
         // mu_notab[Observation,NumMarkers + 1] = inv_logit(eta_observation[Observation,NumMarkers+1]  +
                                     // beta_subpop[SpeakerSubPop[Observation,NumMarkers+1]] * (SpeakerAge[Observation,NumMarkers+1] - MidAge)); //for estimating baseline for null category
         mu[Observation, NumMarkers+1] = inv_logit(eta_observation[Observation, NumMarkers+1]);
+        mu[Observation] = mu[Observation] / sum(mu[Observation]);
   }
 
 
@@ -92,7 +93,7 @@ model {
   //drawing LIWC cat. usage counts in reply
   for(Observation in 1:NumObservations){
     // print("Observation probs=", mu[Observation]);
-    LiwcCounts[Observation] ~ multinomial(softmax(mu[Observation]));
+    LiwcCounts[Observation] ~ multinomial(mu[Observation]);
     // for(Marker in 1:NumMarkers){
     //   LiwcCounts[Observation, NumMarkers] ~ multinomial()
   }
