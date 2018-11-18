@@ -60,10 +60,11 @@ transformed parameters {
 
 
         for (Marker in 1:NumMarkers) {
-                   
+
           mu[Observation, Marker] = inv_logit(eta_observation[Observation, Marker] + 
-            ((1 + alpha_subpop[SpeakerSubPop[Observation]]) * eta_ab_observation[Observation,Marker] * LagCounts[Observation, Marker]) + 
-            ((1 + beta_subpop[SpeakerSubPop[Observation]]) * (SpeakerAge[Observation] - MidAge)));
+            (alpha_subpop[SpeakerSubPop[Observation]] * (SpeakerAge[Observation] - MidAge)) +
+            (eta_ab_observation[Observation,Marker] * log(LagCounts[Observation, Marker] + 1)) + 
+            (beta_subpop[SpeakerSubPop[Observation]] * (SpeakerAge[Observation] - MidAge)));
 
 
            // mu_notab[Observation,Marker] = inv_logit(eta_observation[Observation,Marker]  + 
@@ -77,7 +78,10 @@ transformed parameters {
         // mu_notab[Observation,NumMarkers + 1] = inv_logit(eta_observation[Observation,NumMarkers+1]  + 
                                     // beta_subpop[SpeakerSubPop[Observation,NumMarkers+1]] * (SpeakerAge[Observation,NumMarkers+1] - MidAge)); //for estimating baseline for null category
         mu[Observation, NumMarkers+1] = inv_logit(eta_observation[Observation, NumMarkers+1] + 
-          beta_subpop[SpeakerSubPop[Observation]] * (SpeakerAge[Observation] - MidAge));
+          ((beta_subpop[SpeakerSubPop[Observation]]) * (SpeakerAge[Observation] - MidAge)));
+
+        mu[Observation] = mu[Observation] / sum(mu[Observation]); // for normalizing probability vector
+
   }
   
 
@@ -94,7 +98,7 @@ model {
   alpha_pop ~ normal(0, StdDev);
   beta_pop ~ normal(0, StdDev);
 
-  eta_pop_Marker ~ uniform(-5,5);     //Note that this distribution may be changed if baselines are expected to be very high/low
+  eta_pop_Marker ~ uniform(-20, 20);     //Note that this distribution may be changed if baselines are expected to be very high/low
 
   eta_ab_subpop ~ normal(eta_ab_pop, StdDev);
 
@@ -122,7 +126,7 @@ model {
 
   for(Observation in 1:NumObservations){
     // print("Observation probs=", mu[Observation]);
-    LiwcCounts[Observation] ~ multinomial(softmax(mu[Observation]));
+    LiwcCounts[Observation] ~ multinomial(mu[Observation]);
     // for(Marker in 1:NumMarkers){
     //   LiwcCounts[Observation, NumMarkers] ~ multinomial()
   }

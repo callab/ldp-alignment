@@ -61,7 +61,7 @@ together_present <- together_present %>%
   mutate(not_ipron = article + certain + conj + discrep + excl + i + incl + negate + 
            preps + quant + tentat + we + you + null) %>% 
   select(session, subject, person, lag_ipron, ipron, not_ipron) %>% 
-  filter(session == 5,
+  filter(session %in% c(5,8),
          subject == 22,
          person == 'Child')
 
@@ -86,7 +86,7 @@ together_present <- together_present %>%
 liwc_markers <- names(together_present)[5]
 
 NumMarkers <- length(liwc_markers)
-MidAge <- median(together_present$session)
+MidAge <- median(unique(together_present$session))
 NumSubPops <- length(unique(together_present$person))
 NumObservations <- dim(together_present)[1]
 SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
@@ -97,7 +97,7 @@ StdDev <- 1
 
 
 ```{r Optional Filtering}
-### For one LIWC category model
+### For two LIWC category model
 together_present <- together_present %>% 
   mutate(null = article + certain + conj + discrep + excl + i + incl + negate + 
            preps +  tentat + we + you + null) %>% 
@@ -123,7 +123,7 @@ liwc_markers <- names(together_present)[c(5,7)]
 lag_markers <- names(together_present)[c(4,8)]
 
 NumMarkers <- length(liwc_markers)
-MidAge <- median(together_present$session)
+MidAge <- median(unique(together_present$session))
 NumSubPops <- length(unique(together_present$person))
 NumObservations <- dim(together_present)[1]
 SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
@@ -174,6 +174,11 @@ predicted_data %>%
   group_by(lag_ipron, measure) %>%
   summarise(value = mean(value), n= n()) %>%
   spread(measure, value)
+
+
+# TODO Sanity check for age effect on alignment
+
+
 ```
 
 ```{r Fit No Age Multi Stan Model}
@@ -181,7 +186,7 @@ fit <- stan('stan_models/noage_multinomial_alignment.stan', chains =1)
 ```
 
 ```{r Fit Age Multi Stan Model}
-fit <- stan('stanfits/multinomial_alignment.stan', chains = 1)
+fit <- stan('stan_models/multinomial_alignment.stan', chains = 1)
 ```
 
 ```{r View Stan Fit}
