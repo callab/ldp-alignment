@@ -52,10 +52,10 @@ liwc %>%
 ```
 
 ```{r Load Data}
-together_present <- read_feather('data/together_present.feather')
+together_present <- read_feather('data/RECOUNT_together_present.feather')
 ```
 
-```{r Optional Filtering}
+```{r Optional Filtering - 1 LIWC CATEGORY}
 ### For one LIWC category model
 together_present <- together_present %>% 
   mutate(not_ipron = article + certain + conj + discrep + excl + i + incl + negate + 
@@ -72,12 +72,6 @@ LiwcCounts <- together_present %>%
 LagCounts <- together_present %>% 
   select(lag_ipron) %>% 
   as.matrix()
-
-##### For full LIWC categories model
-together_present <- together_present %>%
-  filter(session ==5,
-         subject == 22,
-         person == "Child")
 
 ```
 
@@ -96,7 +90,7 @@ StdDev <- 1
 ```
 
 
-```{r Optional Filtering}
+```{r Optional Filtering - 2 LIWC CATEGORY}
 ### For two LIWC category model
 together_present <- together_present %>% 
   mutate(null = article + certain + conj + discrep + excl + i + incl + negate + 
@@ -130,6 +124,13 @@ SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Par
 SpeakerAge <- together_present$session
 StdDev <- 1
 
+```
+
+```{r Optional Filtering - FULL LIWC MODEL}
+together_present <- together_present %>%
+  filter(session ==5,
+         subject == 22,
+         person == "Child")
 ```
 
 ```{r Aggregate Stan Data (for full LIWC Category Models)}
