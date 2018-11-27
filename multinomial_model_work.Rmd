@@ -52,18 +52,19 @@ liwc %>%
 ```
 
 ```{r Load Data}
-together_present <- read_feather('data/RECOUNT_together_present.feather')
+old_together_present <- read_feather('data/together_present.feather')
+together_present<- read_feather('data/RECOUNT_together_present.feather')
 ```
 
 ```{r Optional Filtering - 1 LIWC CATEGORY}
 ### For one LIWC category model
-together_present <- together_present %>% 
+together_present <- old_together_present %>% 
   mutate(not_ipron = article + certain + conj + discrep + excl + i + incl + negate + 
            preps + quant + tentat + we + you + null) %>% 
   select(session, subject, person, lag_ipron, ipron, not_ipron) %>% 
-  filter(session %in% c(5,8),
+  filter(session %in% c(4,8),
          subject == 22,
-         person == 'Child')
+         person == 'Parent') 
 
 LiwcCounts <- together_present %>% 
   select(ipron, not_ipron) %>% 
@@ -159,10 +160,12 @@ StdDev <- 1
 ```{r sanity checks}
 model_data <- LiwcCounts %>% 
   as_data_frame() %>% 
-  bind_cols(as_data_frame(LagCounts)) 
+  bind_cols(as_data_frame(LagCounts)) %>%
+  mutate(session = SpeakerAge)
 
 
-model <- glm(cbind(ipron, not_ipron) ~ log(lag_ipron+1), family = "binomial", data = model_data) 
+model <- glm(cbind(ipron, not_ipron) ~ log(lag_ipron+1) * session,
+             family = "binomial", data = model_data) 
 
 predicted_data <- model_data %>%
   mutate(empirical_ratio = ipron/(ipron + not_ipron)) %>%

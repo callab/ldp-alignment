@@ -74,7 +74,7 @@ liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
 liwc_points <- liwc %>%
   group_by(word) %>% 
   mutate(n = n(),
-         points= 1/n)
+         points= 1)
 
 ```
 
@@ -124,51 +124,73 @@ tokens <- split_utts %>%
 #   arrange(subject,session,category,run) 
 ```
 
-```{r DONE - Recompute Word Counts acc. to Multi-LIWC Values}
-# present <- map(1:683, function(row) {
-#   data_frame(present = grepl(paste0("^",liwc_points[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
-#   bind_cols()
-# names(present) <- pull(liwc_points,word)[1:683]
+```{r Recompute Word Counts acc. to Multi-LIWC Values}
+present <- map(1:683, function(row) {
+  data_frame(present = grepl(paste0("^",liwc_points[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
+  bind_cols()
+names(present) <- pull(liwc_points,word)[1:683]
+
+
+
+chunk <- 10000
+n <- nrow(present)
+r <- rep(1:ceiling(n/chunk),each=chunk)[1:n]
+t <- split(tokens,r)
+rm(tokens)
+d <- split(present,r)
+
+long_present <- data_frame()
+
+
+for (j in 1:length(d)) {
+  tokens_slice <- t[[j]]
+
+  temp_raw <- d[[j]] %>%
+    bind_cols(tokens_slice) %>%
+    gather(liwc_word, count, names(present)) %>%
+    left_join(liwc_points, by = c("liwc_word" = "word")) %>%
+    ungroup() 
+  
+  # split up temp by present multi-LIWC words and all others
+  multi_liwc_temp <- temp_raw %>% 
+    filter(count==T,
+           n>1) 
+  
+  other_temp <- temp_raw %>% 
+    filter(count==F | n==1)
+  
+  # use sample_n to randomly select only one LIWC category for multi-LIWC words
+  multi_liwc_temp <- multi_liwc_temp %>% 
+    ungroup() %>% 
+    group_by(run, subject,session, person,word, liwc_word,count) %>% 
+    sample_n(1) %>%
+    ungroup() 
+  
+  # bind words back together and count up instances
+  temp <- other_temp %>% 
+    bind_rows(multi_liwc_temp) %>% 
+    mutate(count = case_when(count == TRUE ~ points,
+                           TRUE ~ 0)) %>%
+    group_by(subject, session, person, category,run) %>%
+    summarise(count = sum(count)) %>%
+    arrange(run) 
+
+  long_present <- bind_rows(long_present,temp)
+}
 # 
-# 
-# 
-# chunk <- 10000
-# n <- nrow(present)
-# r <- rep(1:ceiling(n/chunk),each=chunk)[1:n]
-# t <- split(tokens,r)
-# rm(tokens)
-# d <- split(present,r)
-# 
-# long_present <- data_frame()
-# 
-# for (j in 1:length(d)) {
-#   tokens_slice <- t[[j]]
-# 
-#   temp <- d[[j]] %>%
-#     bind_cols(tokens_slice) %>%
-#     gather(liwc_word, count, names(present)) %>%
-#     left_join(liwc_points, by = c("liwc_word" = "word")) %>%
-#     group_by(subject, session, person, category,run) %>%
-#     mutate(count = case_when(count == TRUE ~ points,
-#                            TRUE ~ 0)) %>% 
-#   # filter(count == TRUE) %>%
-#     summarise(count = sum(count)) %>%
-#     arrange(run) %>%
-#     group_by(subject,session, person, run, category)
-#   
-#   long_present <- bind_rows(long_present,temp)
-# }
-# 
-# write_feather(long_present, 'data/RECOUNT_long_present.feather')
+write_feather(long_present, 'data/RECOUNT_long_present.feather')
 
 ```
 
 ```{r Adjust LIWC counts for multi LIWC words}
+
+## Maybe look into Dirichlet for multicategory real values?
+
+# Or, in counting, for multiLIWC words, randomly assign their influence to one of their categories
 long_present <- read_feather('data/RECOUNT_long_present.feather')
 
-###### May need to adjust here to account for utterances with '+' in them ######
 split_utts <- split_utts %>% 
-  mutate(length = str_count(chat, ' '))
+  mutate(length = str_count(chat, '\\+|\\s'))
 
 long_present <- long_present %>% 
   distinct(subject, session, person, category, run, .keep_all = TRUE) %>% 
@@ -183,15 +205,16 @@ together_present <- together_present %>%
                             ipron + negate + preps + quant + tentat + we + you ))
 
 
-# Still some negative nulls :( All with '+'
-together_present %>% 
-  filter(null<0) %>% 
-  View()
 
-together_present <- together_present %>% 
-  mutate(null = case_when(null > 0 ~ null,
-                          TRUE ~ 0)) %>% 
-  ungroup()
+# No more negative nulls!
+# together_present %>% 
+#   filter(null<0) %>% 
+#   View()
+# 
+# together_present <- together_present %>% 
+#   mutate(null = case_when(null > 0 ~ null,
+#                           TRUE ~ 0)) %>% 
+#   ungroup()
 
 lag_together_present <- together_present %>%
   select(subject, session, person, article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
