@@ -42,6 +42,7 @@ LDP_DIR <- "~/ldp/data/ldp.db"
 
 # Read in LDP data
 
+
 ldp <- src_sqlite(LDP_DIR)
 
 # Get all participants
@@ -220,12 +221,12 @@ lag_together_present <- together_present %>%
   select(subject, session, person, article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
          quant, tentat, we, you, length, null) %>%
   mutate(lag_article = lag(article), lag_certain = lag(certain),
-         lag_conj = lag(conj), lag_conj = lag(discrep), lag_excl = lag(excl),
+         lag_conj = lag(conj), lag_discrep = lag(discrep), lag_excl = lag(excl),
          lag_i = lag(i), lag_incl = lag(incl), lag_ipron = lag(ipron),
          lag_negate = lag(negate), lag_preps = lag(preps), lag_quant = lag(quant),
          lag_tentat = lag(tentat), lag_we = lag(we), lag_you = lag(you)) %>%
   na.omit() %>% 
-  group_by(subject, session, person, lag_article, lag_certain, lag_conj,
+  group_by(subject, session, person, lag_article, lag_certain, lag_conj, lag_discrep,
            lag_excl,
            lag_i,
            lag_incl,

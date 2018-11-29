@@ -54,11 +54,36 @@ liwc %>%
 ```{r Load Data}
 old_together_present <- read_feather('data/together_present.feather')
 together_present<- read_feather('data/RECOUNT_together_present.feather')
+
+# for vectorized stan model
+together_present <- together_present %>% 
+  mutate(lag_null = 0)
 ```
+
+```{r Optional Filtering - VECTORIZED 1 LIWC CATEGORY}
+### For one LIWC category model
+together_present <- together_present %>% 
+  mutate(not_ipron = article + certain + conj + discrep + excl + i + incl + negate + 
+           preps + quant + tentat + we + you + null) %>% 
+  select(session, subject, person, lag_ipron,lag_null, ipron, not_ipron) %>% 
+  filter(session %in% c(4,8),
+         subject == 22,
+         person == 'Parent') 
+
+LiwcCounts <- together_present %>% 
+  select(ipron, not_ipron) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  select(lag_ipron, lag_null) %>% 
+  as.matrix()
+
+```
+
 
 ```{r Optional Filtering - 1 LIWC CATEGORY}
 ### For one LIWC category model
-together_present <- old_together_present %>% 
+together_present <- together_present %>% 
   mutate(not_ipron = article + certain + conj + discrep + excl + i + incl + negate + 
            preps + quant + tentat + we + you + null) %>% 
   select(session, subject, person, lag_ipron, ipron, not_ipron) %>% 
@@ -74,6 +99,18 @@ LagCounts <- together_present %>%
   select(lag_ipron) %>% 
   as.matrix()
 
+```
+
+```{r VECTORIZED Aggregate Stan Data (for one LIWC Category Model)}
+liwc_markers <- names(together_present)[5]
+
+NumMarkers <- length(liwc_markers)
+MidAge <- rep(median(unique(together_present$session)), NumMarkers+1)
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- matrix(rep(together_present$session, NumMarkers+1), NumObservations, byrow = TRUE)
+StdDev <- 1
 ```
 
 ```{r Aggregate Stan Data (for one LIWC Category Model)}
@@ -129,9 +166,8 @@ StdDev <- 1
 
 ```{r Optional Filtering - FULL LIWC MODEL}
 together_present <- together_present %>%
-  filter(session ==5,
-         subject == 22,
-         person == "Child")
+  filter(session %in% c(3,8),
+         subject %in% c(22,25))
 ```
 
 ```{r Aggregate Stan Data (for full LIWC Category Models)}
@@ -193,7 +229,12 @@ fit <- stan('stan_models/noage_multinomial_alignment.stan', chains =1)
 fit <- stan('stan_models/multinomial_alignment.stan', chains = 1)
 ```
 
+```{r Fit Vectorized Age Multi Stan Model}
+fit <- stan('stan_models/vectorized_multinomial_alignment.stan', chains = 1)
+```
+
 ```{r View Stan Fit}
 launch_shinystan(fit)
+
 ```
 
