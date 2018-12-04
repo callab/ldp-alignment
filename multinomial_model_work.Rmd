@@ -167,8 +167,32 @@ StdDev <- 1
 ```{r Optional Filtering - FULL LIWC MODEL}
 together_present <- together_present %>%
   filter(session %in% c(3,8),
-         subject %in% c(22,25))
+         subject %in% c(22,25,30))
 ```
+
+```{r VECTORIZED Aggregate Stan Data (for full LIWC Category Models)}
+liwc_markers <- names(together_present)[18:31]
+lag_markers <- names(together_present)[4:17]
+
+LiwcCounts <- together_present %>% 
+  ungroup() %>%
+  select(one_of(liwc_markers), null) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  ungroup() %>% 
+  select(one_of(lag_markers), lag_null) %>% 
+  as.matrix()
+
+NumMarkers <- length(liwc_markers)
+MidAge <- rep(median(unique(together_present$session)), NumMarkers+1)
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- matrix(rep(together_present$session, NumMarkers+1), NumObservations, byrow = TRUE)
+StdDev <- 1
+```
+
 
 ```{r Aggregate Stan Data (for full LIWC Category Models)}
 liwc_markers <- names(together_present)[18:31]
@@ -181,7 +205,7 @@ LiwcCounts <- together_present %>%
 
 LagCounts <- together_present %>% 
   ungroup() %>% 
-  select(one_of(lag_markers)) %>% 
+  select(one_of(lag_markers), lag_null) %>% 
   as.matrix()
 
 NumMarkers <- length(liwc_markers)
@@ -235,6 +259,10 @@ fit <- stan('stan_models/vectorized_multinomial_alignment.stan', chains = 1)
 
 ```{r View Stan Fit}
 launch_shinystan(fit)
+```
 
+```{r}
+# saveRDS(fit, file = "subsetfullfit.rds")
+fit <- readRDS('subsetfullfit.rds')
 ```
 
