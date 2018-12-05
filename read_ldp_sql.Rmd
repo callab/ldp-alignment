@@ -1,0 +1,445 @@
+---
+title: "Linguistic Alignment in LDP"
+author: "Jo Denby, Ashley Leung, and Dan Yurovksy"
+date: '`r Sys.Date()`'
+output:
+  pdf_document:
+  toc: no
+html_document:
+  code_folding: show
+number_sections: no
+theme: lumen
+toc: no
+toc_float: no
+---
+  
+```{r setup, include = FALSE}
+library(tidyverse)
+library(DBI)
+library(here)
+library(data.table)
+library(tidytext)
+
+opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+               error = FALSE, cache = TRUE, tidy = FALSE)
+```
+
+get ldp connection
+```{r}
+source(here("read_ldp.R"))
+```
+
+
+Read in LDP data. Don't display in public repo
+```{r read_ldp}
+
+ldp <- connect_to_ldp()
+
+subjects <- tbl(ldp, "subjects") %>%
+  collect() %>%
+  filter(lesion == "") %>%
+  select(id, sex, race, ethn)
+
+# Get visit data
+visit_data <- tbl(ldp, "home_visits") %>%
+  collect() %>%
+  filter(visit_type != "SB5") %>%
+  mutate(visit_type = as.numeric(gsub("[^0-9]", "", visit_type))) %>%
+  rename(session = visit_type) %>%
+  mutate(completed = as.logical(completed)) %>%
+  select(subject, session,  age_years,
+         income_category, mother_education, father_education)
+
+visits <- left_join(subjects, visit_data, by = c("id" = "subject"))
+
+# subj by income info
+subj_income <- visits %>%
+  select(subject,session, income_category) %>%
+  tidyr::fill(income_category) %>%
+  unique()
+```
+
+Read in LIWC Categories
+```{r read_liwc}
+liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
+  rename(word = X1, category = X2)
+```
+
+```{r Establish Look-Up Table for LIWC Word Values}
+
+#### THIS IS THE MALLEABLE PART 
+# can change based on what we think the distribution should be
+liwc_points <- liwc %>%
+  group_by(word) %>% 
+  mutate(n = n(),
+         points= 1)
+
+```
+
+
+Set up utterances for computing alignment
+```{r setup_alignment}
+# What do we do when both participants talk on the same line
+utterances <- tbl(ldp, "utterances") %>%
+  select(subject, session, line, p_chat, c_chat) %>%
+  filter(p_chat != "" | c_chat != "") %>%
+  collect() %>%
+  filter(subject %in% unique(visits$id)) %>%
+  mutate(order = 1:n())
+  
+#use rleid from data table to do squashing by run
+split_utts <- utterances %>%
+  gather(person, chat, c(p_chat, c_chat)) %>%
+  mutate(person = if_else(person == "p_chat", "Parent", "Child")) %>%
+  filter(chat != "") %>%
+  arrange(order) %>%
+  mutate(run = rleid(subject, session, person)) %>%
+  group_by(run, subject, session, person) %>%
+  summarise(chat = paste0(chat, collapse = " ")) 
+
+#splits up run utterances into individual token words
+tokens <- split_utts %>%
+  unnest_tokens(word, chat) %>%
+  arrange(run, subject, session) %>%
+  group_by(subject, session)
+
+# ^ asserts the beginning of pattern, $ asserts end; works with regular expressions as well
+# ~ 15min
+# present <- map(1:683, function(row) {
+#   data_frame(present = grepl(paste0("^",liwc[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
+#   bind_cols()
+# names(present) <- pull(liwc,word)[1:683]
+
+
+# long_present <- read_feather("~/Documents/ldp-alignment/long_present.feather")
+
+# first_long_present<-read_feather("data/long_present.feather")
+
+
+
+
+## NEED TO REORDER AND REDO ALIGNMENT COMPUTATION ##
+# long_present <- long_present %>%
+#   arrange(subject,session,category,run) 
+```
+
+```{r Recompute Word Counts acc. to Multi-LIWC Values}
+present <- map(1:683, function(row) {
+  data_frame(present = grepl(paste0("^",liwc_points[row,"word"],'$'), tokens$word,ignore.case = TRUE))}) %>%
+  bind_cols()
+names(present) <- pull(liwc_points,word)[1:683]
+
+
+
+chunk <- 10000
+n <- nrow(present)
+r <- rep(1:ceiling(n/chunk),each=chunk)[1:n]
+t <- split(tokens,r)
+rm(tokens)
+d <- split(present,r)
+
+long_present <- data_frame()
+
+
+for (j in 1:length(d)) {
+  tokens_slice <- t[[j]]
+
+  temp_raw <- d[[j]] %>%
+    bind_cols(tokens_slice) %>%
+    gather(liwc_word, count, names(present)) %>%
+    left_join(liwc_points, by = c("liwc_word" = "word")) %>%
+    ungroup() 
+  
+  # split up temp by present multi-LIWC words and all others
+  multi_liwc_temp <- temp_raw %>% 
+    filter(count==T,
+           n>1) 
+  
+  other_temp <- temp_raw %>% 
+    filter(count==F | n==1)
+  
+  # use sample_n to randomly select only one LIWC category for multi-LIWC words
+  multi_liwc_temp <- multi_liwc_temp %>% 
+    ungroup() %>% 
+    group_by(run, subject,session, person,word, liwc_word,count) %>% 
+    sample_n(1) %>%
+    ungroup() 
+  
+  # bind words back together and count up instances
+  temp <- other_temp %>% 
+    bind_rows(multi_liwc_temp) %>% 
+    mutate(count = case_when(count == TRUE ~ points,
+                           TRUE ~ 0)) %>%
+    group_by(subject, session, person, category,run) %>%
+    summarise(count = sum(count)) %>%
+    arrange(run) 
+
+  long_present <- bind_rows(long_present,temp)
+}
+# 
+write_feather(long_present, 'data/RECOUNT_long_present.feather')
+
+```
+
+```{r Adjust LIWC counts for multi LIWC words}
+
+## Maybe look into Dirichlet for multicategory real values?
+
+# Or, in counting, for multiLIWC words, randomly assign their influence to one of their categories
+long_present <- read_feather('data/RECOUNT_long_present.feather')
+
+split_utts <- split_utts %>% 
+  mutate(length = str_count(chat, '\\+|\\s'))
+
+long_present <- long_present %>% 
+  distinct(subject, session, person, category, run, .keep_all = TRUE) %>% 
+  spread(category,count, fill = 0)
+
+together_present <- long_present %>%
+  left_join(split_utts, by=c('subject','session','run','person'))
+
+together_present <- together_present %>% 
+  na.omit() %>% 
+  mutate(null = length - (article + certain + conj + discrep + excl + i + incl + 
+                            ipron + negate + preps + quant + tentat + we + you ))
+
+
+
+# No more negative nulls!
+# together_present %>% 
+#   filter(null<0) %>% 
+#   View()
+# 
+# together_present <- together_present %>% 
+#   mutate(null = case_when(null > 0 ~ null,
+#                           TRUE ~ 0)) %>% 
+#   ungroup()
+
+lag_together_present <- together_present %>%
+  select(subject, session, person, article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
+         quant, tentat, we, you, length, null) %>%
+  mutate(lag_article = lag(article), lag_certain = lag(certain),
+         lag_conj = lag(conj), lag_discrep = lag(discrep), lag_excl = lag(excl),
+         lag_i = lag(i), lag_incl = lag(incl), lag_ipron = lag(ipron),
+         lag_negate = lag(negate), lag_preps = lag(preps), lag_quant = lag(quant),
+         lag_tentat = lag(tentat), lag_we = lag(we), lag_you = lag(you)) %>%
+  na.omit() %>% 
+  group_by(subject, session, person, lag_article, lag_certain, lag_conj, lag_discrep,
+           lag_excl,
+           lag_i,
+           lag_incl,
+           lag_ipron,
+           lag_negate,
+           lag_preps,
+           lag_quant,
+           lag_tentat,
+           lag_we,
+           lag_you) %>%
+  summarise_at(vars(article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
+         quant, tentat, we, you, null), sum)
+
+write_feather(lag_together_present, 'data/RECOUNT_together_present.feather')
+```
+
+
+```{r}
+long_present <- long_present %>%
+  mutate(
+    BA = case_when(
+      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE))))) %>%
+  mutate(
+    notBA = case_when(
+      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
+                      ifelse(count>lag(count),count-lag(count),0))))) %>%
+  mutate(
+    BnotA = case_when(
+      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
+                      ifelse(lag(count)>count,lag(count)-count,0))))) %>%
+  mutate(
+    notBnotA = case_when(
+      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
+                         ifelse(lag(count)==0 & count==0,1,0)))))
+
+
+liwc_markers <- as.numeric(as.factor(unique(liwc$category)))
+
+###  STAN DATA ####
+NumMarkers <- length(unique(liwc$category))
+NumSubPops <- length(unique(long_present$person))
+NumObservations <- dim(long_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(long_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- long_present$session
+MarkerType <- as.numeric(as.factor(long_present$category)) #see liwc_markers
+NumUtterancesAB <- rep(sum(long_present$notBA, na.rm=TRUE) + sum(long_present$notBnotA, na.rm=TRUE), NumObservations)
+NumUtterancesNotAB <- rep(sum(long_present$BA, na.rm=TRUE) + sum(long_present$BnotA, na.rm=TRUE), NumObservations)
+CountsAB <- rep(sum(long_present$notBA, na.rm=TRUE), NumObservations)
+CountsNotAB <- rep(sum(long_present$BA, na.rm = TRUE),NumObservations)
+StdDev <- 1
+###################
+fit <- stan(file = "twitter_align.stan", chains = 1)
+
+
+
+####################################################
+
+# # est time ~107 mins
+ # chunk <- 10000
+ # n <- nrow(present)
+ # r <- rep(1:ceiling(n/chunk),each=chunk)[1:n]
+ # d <- split(present,r)
+ # t <- split(tokens,r)
+ # 
+ # long_present <- data_frame()
+ # 
+ # for (j in 1:length(d)) {
+ #   tokens_slice <- t[[j]]
+ # 
+ #   temp <- d[[j]] %>%
+ #   bind_cols(tokens_slice) %>%
+ #   gather(liwc_word, count, names(present)) %>%
+ #   left_join(liwc, by = c("liwc_word" = "word")) %>%
+ #   group_by(subject, session, person, category,run) %>%
+ #   summarise(count = sum(count)) %>%
+ #   arrange(run) %>%
+ #   group_by(subject,session, category)
+ # 
+ #   long_present <- bind_rows(long_present,temp)
+ # }
+
+R_lesion_subjs <- subjs %>%
+  filter(lesion=="R") %>%
+  select(id)
+L_lesion_subjs <- subjs %>%
+  filter(lesion=="L") %>%
+  select(id)
+
+kid_income <- visits %>%
+  group_by(subject) %>%
+  summarise(income = mean(income, na.rm = T)) %>%
+  ungroup() %>%
+  mutate(upper_half = income > median(income, na.rm = T))
+
+demographics <- read.xlsx("~/Desktop/LDP_Alignment/Demographics.xls",1) 
+
+# only education data for 64/166 subjects
+mother_ed <- demographics %>%
+  select(c(subject_number, mother_education)) %>%
+  filter(subject_number==subjs$id)
+
+colnames(mother_ed) <- c('subject','mother_education')
+
+long_present <- long_present %>%
+  mutate(BA=ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE))) %>%
+  mutate(notBA=ifelse(is.na(lag(count)),NA,
+                      ifelse(count>lag(count),count-lag(count),0))) %>%
+  mutate(BnotA=ifelse(is.na(lag(count)),NA,
+                      ifelse(lag(count)>count,lag(count)-count,0))) %>%
+  mutate(notBnotA=ifelse(is.na(lag(count)),NA,
+                         ifelse(lag(count)==0 & count==0,1,0))) %>%
+  mutate(lesion=ifelse(subject %in% R_lesion_subjs$id,"R",
+                       ifelse(subject %in% L_lesion_subjs$id,"L",''))) %>%
+  left_join(kid_income)
+
+long_present_ed <- long_present %>%
+  filter(subject %in% ed_subjs) %>%
+  left_join(mother_ed)
+
+alignment_agg <- long_present %>%
+  mutate_at(vars(BA, notBA, BnotA, notBnotA), 
+            function(x) as.numeric(x > 0)) %>%
+  gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
+  group_by(session, person, measure) %>%
+  summarise(n = sum(value, na.rm = T)) %>% 
+  spread(measure, n) %>%
+  mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
+         B = (BA + BnotA) / (BA + notBA + BnotA + notBnotA),
+         PAB= BA/(BA + BnotA),
+         PAnotB = notBA/(notBA + notBnotA),
+         alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
+  select(person, session, alignment) %>%
+  filter(!is.na(alignment)) 
+
+ggplot(data=alignment_agg, aes(x=as.factor(session), y=alignment, group=person)) +
+  geom_line(stat='identity', aes(color=person)) + theme_bw() +
+  xlab ('Session') +
+  ylab ('Linguistic Alignment')
+
+alignment_income <- long_present %>%
+  mutate_at(vars(BA, notBA, BnotA, notBnotA), 
+            function(x) as.numeric(x > 0)) %>%
+  gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
+  group_by(session, upper_half, subject, person, measure) %>%
+  summarise(n = sum(value, na.rm = T)) %>% 
+  spread(measure, n) %>%
+  mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
+         B = (BA + BnotA) / (BA + notBA + BnotA + notBnotA),
+         PAB= BA/(BA + BnotA),
+         PAnotB = notBA/(notBA + notBnotA),
+         alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
+  select(session, person, upper_half, alignment, subject) %>%
+  group_by(upper_half, session, person) %>%
+  filter(!is.na(alignment))
+
+avg_alignment_income <- alignment_income %>%
+  group_by(upper_half, person, session) %>%
+  summarise(sem = sd(alignment)/sqrt(n()), alignment = mean(alignment))
+
+
+ggplot(data=avg_alignment_income, aes(x=as.factor(session),
+                                      y=alignment, group=interaction(person,upper_half),
+                                      color = person,
+                                      fill = person)) +
+  geom_pointrange(aes(ymin = alignment - sem, ymax = alignment + sem)) +
+  geom_ribbon(aes(ymin = alignment - sem, ymax = alignment + sem), alpha = .1) +
+  geom_line(stat='identity', aes(linetype=upper_half)) + theme_bw() +
+  xlab ('Session') +
+  ylab ('Linguistic Alignment')
+
+alignment_ed <- long_present_ed %>%
+  mutate_at(vars(BA, notBA, BnotA, notBnotA), 
+            function(x) as.numeric(x > 0)) %>%
+  gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
+  group_by(session, mother_education, person, measure) %>%
+  summarise(n = sum(value, na.rm = T)) %>% 
+  spread(measure, n) %>%
+  mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
+         B = (BA + BnotA) / (BA + notBA + BnotA + notBnotA),
+         PAB= BA/(BA + BnotA),
+         PAnotB = notBA/(notBA + notBnotA),
+         alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
+  select(session, person, mother_education, alignment) %>%
+  filter(!is.na(alignment)) 
+
+ggplot(data=alignment_ed, aes(x=as.factor(session), y=alignment, group=interaction(person, mother_education))) +
+  geom_line(stat='identity', aes(color=person, linetype=mother_education)) + theme_bw() +
+  xlab ('Session') +
+  ylab ('Linguistic Alignment')+
+  coord_cartesian(ylim=c(0,.15))
+
+alignment_lesion <- long_present %>%
+  mutate_at(vars(BA, notBA, BnotA, notBnotA), 
+            function(x) as.numeric(x > 0)) %>%
+  gather(measure, value, BA, notBA, BnotA, notBnotA) %>%
+  group_by(session, lesion, person, measure) %>%
+  summarise(n = sum(value, na.rm = T)) %>% 
+  spread(measure, n) %>%
+  mutate(A = (BA + notBA) / (BA + notBA + BnotA + notBnotA),
+         B = (BA + BnotA) / (BA + notBA + BnotA + notBnotA),
+         PAB= BA/(BA + BnotA),
+         PAnotB = notBA/(notBA + notBnotA),
+         alignment = PAB - (PAB*B + PAnotB*(1-B))) %>%
+  select(session, person, lesion, alignment) %>%
+  filter(!is.na(alignment)) 
+
+ggplot(data=alignment_lesion, aes(x=as.factor(session), y=alignment, group=interaction(person,lesion) )) +
+  geom_line(stat='identity', aes(color=person, linetype=lesion)) + theme_bw() +
+  xlab ('Session') +
+  ylab ('Linguistic Alignment')+
+  coord_cartesian(ylim=c(0,.15))
+
+
+#read in demographics data
+#left join mother's education
+#plot with that
+#read through stan tutorial / introductions
+```
