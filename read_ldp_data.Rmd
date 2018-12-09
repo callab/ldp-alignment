@@ -278,7 +278,7 @@ CountsAB <- rep(sum(long_present$notBA, na.rm=TRUE), NumObservations)
 CountsNotAB <- rep(sum(long_present$BA, na.rm = TRUE),NumObservations)
 StdDev <- 1
 ###################
-fit <- stan(file = "twitter_align.stan", chains = 1)
+fit <- stan(file = "stan_models/alignment_ageboth.stan", chains = 1)
 
 
 
