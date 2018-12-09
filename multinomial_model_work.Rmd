@@ -194,28 +194,59 @@ StdDev <- 1
 ```
 
 
-```{r Aggregate Stan Data (for full LIWC Category Models)}
-liwc_markers <- names(together_present)[18:31]
-lag_markers <- names(together_present)[4:17]
+```{r Aggregate Stan Data (for full LIWC Category Models) - CHILD}
+together_present.child <- together_present %>% 
+  filter(person=='Child')
 
-LiwcCounts <- together_present %>% 
+
+liwc_markers <- names(together_present.child)[18:31]
+lag_markers <- names(together_present.child)[4:17]
+
+LiwcCounts <- together_present.child %>% 
   ungroup() %>%
   select(one_of(liwc_markers), null) %>% 
   as.matrix()
 
-LagCounts <- together_present %>% 
+LagCounts <- together_present.child %>% 
   ungroup() %>% 
   select(one_of(lag_markers), lag_null) %>% 
   as.matrix()
 
 NumMarkers <- length(liwc_markers)
-MidAge <- median(together_present$session)
-NumSubPops <- length(unique(together_present$person))
-NumObservations <- dim(together_present)[1]
-SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
-SpeakerAge <- together_present$session
+MidAge <- median(together_present.child$session)
+NumSubPops <- length(unique(together_present.child$person))
+NumObservations <- dim(together_present.child)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present.child$person)) # Child - 1
+SpeakerAge <- together_present.child$session
 StdDev <- 1
 ```
+
+```{r Aggregate Stan Data (for full LIWC Category Models) - PARENT}
+together_present.parent <- together_present %>% 
+  filter(person=='Parent')
+
+liwc_markers <- names(together_present)[18:31]
+lag_markers <- names(together_present)[4:17]
+
+LiwcCounts <- together_present.parent %>% 
+  ungroup() %>%
+  select(one_of(liwc_markers), null) %>% 
+  as.matrix()
+
+LagCounts <- together_present.parent %>% 
+  ungroup() %>% 
+  select(one_of(lag_markers), lag_null) %>% 
+  as.matrix()
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(together_present.parent$session)
+NumSubPops <- length(unique(together_present.parent$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present.parent$person)) # Parent - 1
+SpeakerAge <- together_present.parent$session
+StdDev <- 1
+```
+
 
 ```{r sanity checks}
 model_data <- LiwcCounts %>% 
