@@ -244,7 +244,12 @@ write_feather(lag_together_present, 'data/RECOUNT_together_present.feather')
 ```
 
 
-```{r}
+```{r SCRIPT FOR PRE-PROCESSING DATA AND RUNNING OLD STAN MODEL}
+long_present <- read_feather('data/RECOUNT_long_present.feather')
+
+long_present <- long_present %>% 
+  arrange(subject, session, category, run) 
+
 long_present <- long_present %>%
   mutate(
     BA = case_when(
@@ -262,6 +267,14 @@ long_present <- long_present %>%
       category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
                          ifelse(lag(count)==0 & count==0,1,0)))))
 
+long_present <- long_present %>% 
+  group_by(subject, session, person, category) %>% 
+  na.omit() %>% 
+  summarise(CountsAB = sum(notBA),
+            CountsNotAB = sum(BA),
+            NumUtterancesAB = sum(BA) + sum(BnotA),
+            NumUtterancesNotAB = sum(notBA) + sum(notBnotA))
+
 
 liwc_markers <- as.numeric(as.factor(unique(liwc$category)))
 
@@ -272,14 +285,17 @@ NumObservations <- dim(long_present)[1]
 SpeakerSubPop <- as.numeric(as.factor(long_present$person)) # Child - 1; Parent - 2
 SpeakerAge <- long_present$session
 MarkerType <- as.numeric(as.factor(long_present$category)) #see liwc_markers
-NumUtterancesAB <- rep(sum(long_present$notBA, na.rm=TRUE) + sum(long_present$notBnotA, na.rm=TRUE), NumObservations)
-NumUtterancesNotAB <- rep(sum(long_present$BA, na.rm=TRUE) + sum(long_present$BnotA, na.rm=TRUE), NumObservations)
-CountsAB <- rep(sum(long_present$notBA, na.rm=TRUE), NumObservations)
-CountsNotAB <- rep(sum(long_present$BA, na.rm = TRUE),NumObservations)
+NumUtterancesAB <- long_present$NumUtterancesAB
+NumUtterancesNotAB <- long_present$NumUtterancesNotAB
+CountsAB <- long_present$CountsAB
+CountsNotAB <- long_present$CountsNotAB
 StdDev <- 1
 ###################
 fit <- stan(file = "stan_models/alignment_ageboth.stan", chains = 1)
+saveRDS(fit, 'stanfits/oldalignmentfit.rds')
+```
 
+```{r}
 
 
 ####################################################
