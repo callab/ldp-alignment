@@ -60,6 +60,52 @@ together_present <- together_present %>%
   mutate(lag_null = 0)
 ```
 
+```{r Check Representation of Each Subject}
+together_present %>% 
+  group_by(subject) %>% 
+  summarise(sessions = n_distinct(session)) %>% 
+  View()
+
+# Most have all sessions - going to pick 10 sessions as the min
+model_subjs <- together_present %>% 
+  group_by(subject) %>% 
+  summarise(sessions = n_distinct(session)) %>% 
+  filter(sessions >= 10) %$% 
+  subject
+
+model_together_present <- together_present %>% 
+  filter(subject %in% model_subjs)
+```
+
+```{r Filtering / Preparing Data for Stan Model}
+chosen_subject <- model_subjs[4]
+
+small_together_present <- model_together_present %>% 
+  filter(subject == chosen_subject)
+
+liwc_markers <- names(small_together_present)[18:31]
+lag_markers <- names(small_together_present)[4:17]
+
+LiwcCounts <- small_together_present %>% 
+  ungroup() %>%
+  select(one_of(liwc_markers), null) %>% 
+  as.matrix()
+
+LagCounts <- small_together_present %>% 
+  ungroup() %>% 
+  select(one_of(lag_markers)) %>% 
+  as.matrix()
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(small_together_present$session)
+NumSubPops <- length(unique(small_together_present$person))
+NumObservations <- dim(small_together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(small_together_present$person)) # Child - 1, Parent - 2
+SpeakerAge <- small_together_present$session
+StdDev <- 1
+```
+
+
 ```{r Optional Filtering - VECTORIZED 1 LIWC CATEGORY}
 ### For one LIWC category model
 together_present <- together_present %>% 
