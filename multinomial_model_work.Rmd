@@ -17,6 +17,7 @@ library(RSQLite)
 library(feather)
 library(xlsx)
 library(rstan)
+library(magrittr)
 library(zoo)
 library(shinystan)
 
@@ -77,7 +78,7 @@ model_together_present <- together_present %>%
   filter(subject %in% model_subjs)
 ```
 
-```{r Filtering / Preparing Data for Stan Model}
+```{r Filtering / Preparing Data for Stan Model - SPLIT BY SUBJECT}
 chosen_subject <- model_subjs[4]
 
 small_together_present <- model_together_present %>% 
@@ -97,12 +98,15 @@ LagCounts <- small_together_present %>%
   as.matrix()
 
 NumMarkers <- length(liwc_markers)
-MidAge <- median(small_together_present$session)
+MidAge <- median(unique(together_present$session))
 NumSubPops <- length(unique(small_together_present$person))
 NumObservations <- dim(small_together_present)[1]
 SpeakerSubPop <- as.numeric(as.factor(small_together_present$person)) # Child - 1, Parent - 2
 SpeakerAge <- small_together_present$session
 StdDev <- 1
+
+fit <- stan('stan_models/multinomial_alignment.stan', chains = 1)
+
 ```
 
 
