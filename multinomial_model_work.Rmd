@@ -347,3 +347,22 @@ launch_shinystan(fit)
 fit <- readRDS('subsetfullfit.rds')
 ```
 
+```{r Fit Extraction}
+fit <- readRDS("stanfits/subj22fit.rds")
+
+
+stan_names <- names(fit) %>%
+  as_data_frame() %>%
+  filter(!str_detect(value, "observation"),
+         !str_detect(value, "Marker"),
+         !str_detect(value, "mu"))
+
+rstan::extract(fit, stan_names[[1]][1:10]) %>%
+  bind_cols() %>%
+  summarise_all(mean) %>%
+  #mutate(id = 1:n()) %>%
+  gather(measure, value) %>%
+  filter(!str_detect(measure, "Marker")) %>% 
+  View()
+```
+
