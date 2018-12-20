@@ -1,0 +1,31 @@
+---
+title: "alignment_correlations"
+author: "Joseph Denby"
+date: "12/20/2018"
+output: html_document
+---
+
+```{r}
+library(knitr)
+library(data.table)
+library(tidyverse)
+library(readr)
+library(stringr)
+library(DT)
+library(tidytext)
+library(RSQLite)
+library(feather)
+library(magrittr)
+library(zoo)
+```
+
+```{r Load Fit Stats}
+fit_stats <- read_feather("results/together_fit_stats.feather")
+```
+
+```{r}
+fit_stats %>% 
+  group_by(measure) %>% 
+  summarise(value = mean(value))
+```
+
