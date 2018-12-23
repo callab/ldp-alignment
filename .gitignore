@@ -39,3 +39,4 @@ vignettes/*.pdf
 .dat
 
 read_ldp.R
+.Rproj.user

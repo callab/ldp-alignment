@@ -279,6 +279,7 @@ long_present <- long_present %>%
 liwc_markers <- as.numeric(as.factor(unique(liwc$category)))
 
 ###  STAN DATA ####
+MidAge <- median(long_present$session)
 NumMarkers <- length(unique(liwc$category))
 NumSubPops <- length(unique(long_present$person))
 NumObservations <- dim(long_present)[1]
@@ -291,7 +292,12 @@ CountsAB <- long_present$CountsAB
 CountsNotAB <- long_present$CountsNotAB
 StdDev <- 1
 ###################
+
 fit <- stan(file = "stan_models/alignment_ageboth.stan", chains = 1)
+
+# Twitter model w/o age effects
+# fit <- stan(file = "stan_models/twitter_align.stan", chains = 1)
+
 saveRDS(fit, 'stanfits/oldalignmentfit.rds')
 ```
 
