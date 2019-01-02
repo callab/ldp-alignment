@@ -14,14 +14,119 @@ toc_float: no
 ---
   
 ```{r setup, include = FALSE}
+library(knitr)
 library(tidyverse)
 library(DBI)
 library(here)
 library(data.table)
 library(tidytext)
+library(RMySQL)
 
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
+```
+
+```{r ldp_functions}
+source(here("read_ldp.R"))
+```
+
+```{r, eval=T, message=FALSE}
+MIN_VISITS <- 5
+
+Mode <- function(x) {
+  x <- x[!is.na(x)]
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+#### Load and Clean Data
+# Read in LDP data
+ldp <- connect_to_ldp()
+
+# subject demographics
+demos <- get_table(ldp, "subjects") %>%
+        filter(lesion == "") %>%
+        select(id, sex, race, ethn) %>%
+        collect()
+
+# visits information and more subject demographics
+visits <- get_table(ldp, "home_visits") %>%
+  distinct(id, age_years, subject, visit_type, completed, income_category, 
+           mother_education) %>%
+  collect() %>%
+  filter(visit_type != "SB5") %>%
+  mutate(visit_type = as.numeric(gsub("[^0-9]", "", visit_type))) %>%
+  rename(visit = visit_type) %>%
+  mutate(completed = as.logical(completed),
+         income_category = as.numeric(income_category))
+
+subjs <- visits %>%
+  group_by(subject) %>%
+  summarise(completed = sum(completed),
+            income_category = Mode(income_category),
+            mother_education = Mode(mother_education)) %>%
+  filter(completed >= 5) %>%
+  select(-completed) %>%
+  right_join(demos, by = c("subject" = "id"))
+
+session_ages <- visits %>%
+        filter(subject %in% subjs$subject, completed) %>%
+        select(subject, visit, age_years) %>%
+        rename(age = age_years) %>%
+        arrange(subject, visit)
+```
+
+Get other measures
+```{r load_measures}
+# subject level ppvt info
+ppvt <- get_table(ldp, "ppvt") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(ppvt = ppvt_raw) %>%
+  select(subject, visit, age_years, ppvt)
+  
+cdi_ws <- get_table(ldp, "cdi_words_and_sentences") %>%
+  select(id, visit, cdis_1a1_num, cdis_2e_num) %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(cdi_ws = cdis_1a1_num, sent_comp = cdis_2e_num) %>%
+  select(subject, visit, age_years, cdi_ws, sent_comp) %>%
+  arrange(subject, visit)
+
+syntax <- get_table(ldp, "syntax") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(syntax = syntax_raw) %>%
+  select(subject, visit, age_years, syntax) %>% 
+  arrange(subject, visit)
+
+wppsi <- get_table(ldp, "wppsi_block_design") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  arrange(subject, visit) %>%
+  filter(!is.na(wppsi_block_raw)) %>%
+  select(subject, visit, age_years, wppsi_block_raw) %>%
+  rename(wppsi_block = wppsi_block_raw)
+
+measures <- full_join(ppvt, cdi_ws, by = c("subject", "visit", "age_years")) %>%
+  full_join(syntax, by = c("subject", "visit", "age_years")) %>%
+  full_join(wppsi, by = c("subject", "visit", "age_years")) %>%
+  gather(measure, value, ppvt, cdi_ws, sent_comp, syntax, wppsi_block) %>%
+  filter(!is.na(value)) %>%
+  arrange(subject, measure, visit) %>%
+  mutate(person = "child")
 ```
 
 get ldp connection
@@ -35,10 +140,12 @@ Read in LDP data. Don't display in public repo
 
 ldp <- connect_to_ldp()
 
+# demographic info by subject number
 subjects <- tbl(ldp, "subjects") %>%
   collect() %>%
   filter(lesion == "") %>%
-  select(id, sex, race, ethn)
+  select(id, sex, race, ethn) %>% 
+  rename(subject=id)
 
 # Get visit data
 visit_data <- tbl(ldp, "home_visits") %>%
@@ -47,16 +154,32 @@ visit_data <- tbl(ldp, "home_visits") %>%
   mutate(visit_type = as.numeric(gsub("[^0-9]", "", visit_type))) %>%
   rename(session = visit_type) %>%
   mutate(completed = as.logical(completed)) %>%
-  select(subject, session,  age_years,
+  select(id,subject, session,  age_years,
          income_category, mother_education, father_education)
 
-visits <- left_join(subjects, visit_data, by = c("id" = "subject"))
+
+visits <- left_join(visit_data, subjects, by = "subject") 
 
 # subj by income info
 subj_income <- visits %>%
   select(subject,session, income_category) %>%
   tidyr::fill(income_category) %>%
   unique()
+
+dbListTables(ldp)
+
+#ppvt info
+ppvt_data <- tbl(ldp, "ppvt") %>% 
+  collect()
+
+#cdi info
+cdi_wg_data <- tbl(ldp, "cdi_words_and_gestures") %>% 
+  collect()
+
+cdi_ws_data <- tbl(ldp, "cdi_words_and_sentences") %>% 
+  collect()
+
+
 ```
 
 Read in LIWC Categories

@@ -14,13 +14,139 @@ library(stringr)
 library(DT)
 library(tidytext)
 library(RSQLite)
+library(DBI)
+library(here)
 library(feather)
 library(magrittr)
 library(zoo)
+library(RMySQL)
 ```
 
 ```{r Load Fit Stats}
 fit_stats <- read_feather("results/together_fit_stats.feather")
+```
+
+```{r ldp_functions}
+source(here("read_ldp.R"))
+```
+
+```{r, eval=T, message=FALSE}
+MIN_VISITS <- 5
+
+Mode <- function(x) {
+  x <- x[!is.na(x)]
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+#### Load and Clean Data
+# Read in LDP data
+ldp <- connect_to_ldp()
+
+# subject demographics
+demos <- get_table(ldp, "subjects") %>%
+        filter(lesion == "") %>%
+        select(id, sex, race, ethn) %>%
+        collect()
+
+# visits information and more subject demographics
+visits <- get_table(ldp, "home_visits") %>%
+  distinct(id, age_years, subject, visit_type, completed, income_category, 
+           mother_education) %>%
+  collect() %>%
+  filter(visit_type != "SB5") %>%
+  mutate(visit_type = as.numeric(gsub("[^0-9]", "", visit_type))) %>%
+  rename(visit = visit_type) %>%
+  mutate(completed = as.logical(completed),
+         income_category = as.numeric(income_category))
+
+subjs <- visits %>%
+  group_by(subject) %>%
+  summarise(completed = sum(completed),
+            income_category = Mode(income_category),
+            mother_education = Mode(mother_education)) %>%
+  filter(completed >= 5) %>%
+  select(-completed) %>%
+  right_join(demos, by = c("subject" = "id"))
+
+session_ages <- visits %>%
+        filter(subject %in% subjs$subject, completed) %>%
+        select(subject, visit, age_years) %>%
+        rename(age = age_years) %>%
+        arrange(subject, visit)
+```
+
+Get other measures
+```{r load_measures}
+# subject level ppvt info
+ppvt <- get_table(ldp, "ppvt") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(ppvt = ppvt_raw) %>%
+  select(subject, visit, age_years, ppvt)
+  
+cdi_ws <- get_table(ldp, "cdi_words_and_sentences") %>%
+  select(id, visit, cdis_1a1_num, cdis_2e_num) %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(cdi_ws = cdis_1a1_num, sent_comp = cdis_2e_num) %>%
+  select(subject, visit, age_years, cdi_ws, sent_comp) %>%
+  arrange(subject, visit)
+
+syntax <- get_table(ldp, "syntax") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(syntax = syntax_raw) %>%
+  select(subject, visit, age_years, syntax) %>% 
+  arrange(subject, visit)
+
+wppsi <- get_table(ldp, "wppsi_block_design") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  arrange(subject, visit) %>%
+  filter(!is.na(wppsi_block_raw)) %>%
+  select(subject, visit, age_years, wppsi_block_raw) %>%
+  rename(wppsi_block = wppsi_block_raw)
+
+measures <- full_join(ppvt, cdi_ws, by = c("subject", "visit", "age_years")) %>%
+  full_join(syntax, by = c("subject", "visit", "age_years")) %>%
+  full_join(wppsi, by = c("subject", "visit", "age_years")) %>%
+  gather(measure, value, ppvt, cdi_ws, sent_comp, syntax, wppsi_block) %>%
+  filter(!is.na(value)) %>%
+  arrange(subject, measure, visit) %>%
+  mutate(person = "child")
+
+```
+
+```{r correlate (avg subject) ppvt }
+avg_subj_ppvt <- measures %>% 
+  filter(measure == 'ppvt') %>%
+  ungroup() %>% 
+  group_by(subject) %>% 
+  summarise(value= mean(value)) %>% 
+  rename(ppvt = value)
+
+ppvt_fit_stats <- left_join(avg_subj_ppvt, fit_stats, by = c('subject'='subj')) %>% 
+  na.omit()
+
+# correlations
+ppvt_fit_stats %>% 
+  group_by(measure) %>% 
+  mutate(correlation = cor(ppvt,value)) %>% 
+  select(measure, correlation) %>% 
+  distinct()
 ```
 
 ```{r}
