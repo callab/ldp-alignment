@@ -245,35 +245,23 @@ write_feather(lag_together_present, 'data/RECOUNT_together_present.feather')
 
 
 ```{r SCRIPT FOR PRE-PROCESSING DATA AND RUNNING OLD STAN MODEL}
-long_present <- read_feather('data/RECOUNT_long_present.feather')
+raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
 
-long_present <- long_present %>% 
-  arrange(subject, session, category, run) 
-
-long_present <- long_present %>%
-  mutate(
-    BA = case_when(
-      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,pmin(count,lag(count), na.rm=TRUE))))) %>%
-  mutate(
-    notBA = case_when(
-      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
-                      ifelse(count>lag(count),count-lag(count),0))))) %>%
-  mutate(
-    BnotA = case_when(
-      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
-                      ifelse(lag(count)>count,lag(count)-count,0))))) %>%
-  mutate(
-    notBnotA = case_when(
-      category == lag(category) ~ (ifelse(is.na(lag(count)),NA,
-                         ifelse(lag(count)==0 & count==0,1,0)))))
-
-long_present <- long_present %>% 
-  group_by(subject, session, person, category) %>% 
-  na.omit() %>% 
-  summarise(CountsAB = sum(notBA),
-            CountsNotAB = sum(BA),
-            NumUtterancesAB = sum(BA) + sum(BnotA),
-            NumUtterancesNotAB = sum(notBA) + sum(notBnotA))
+long_present <- raw_long_present %>% 
+  arrange(subject, session, category, run) %>%
+  group_by(subject, session, category) %>%
+  mutate(lag_count = lag(count)) %>%
+  filter(!is.na(lag_count)) %>%
+  group_by(subject, session, person, category) %>%
+  mutate(BA = count > 0 & lag_count > 0,
+         notBA = count == 0 & lag_count > 0,
+         BnotA = count > 0 & lag_count == 0,
+         notBnotA = count == 0 & lag_count == 0) %>%
+  summarise_at(vars(BA,notBA,BnotA,notBnotA), sum) %>%
+  mutate(NumUtterancesAB = BA +notBA, 
+         NumUtterancesNotAB = BnotA + notBnotA) %>%
+  rename(CountsAB = BA, CountsNotAB = BnotA) %>%
+    select(-notBA, - notBnotA)
 
 
 liwc_markers <- as.numeric(as.factor(unique(liwc$category)))
