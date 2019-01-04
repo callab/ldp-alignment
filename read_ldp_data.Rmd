@@ -323,20 +323,52 @@ StdDev <- 1
 ###################
 
 fit_hierarchical <- stan("stan_models/alignment_fullyhierarchical.stan", 
-                         chains = 1, iter = 200, warmup = 100, 
-                         control = list(adapt_delta = .9))
+                         chains = 1,
+                         control = list(adapt_delta = 1))
 
 
 ```
 
 
 ```{r}
+SE_UPPER <- .84
+SE_LOWER <- .16
 
-sum_hierarchical %>%
-  filter(!str_detect(var, "Marker"), 
-         !str_detect(var, "observation"),
-         !str_detect(var, "mu"))
+pars <- names(fit_hierarchical) %>%
+  as_data_frame() %>%
+  filter(!str_detect(value, "Marker"), 
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu"),
+          !str_detect(value, "lp__")) %>%
+  pull()
 
+
+parameter_cis <- extract(fit_hierarchical, pars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER)) %>%
+  ungroup() %>%
+  mutate(measure = gsub("eta_ab","eta-ab", measure)) %>%
+  separate(measure, into = c("parameter", "type") , sep = "_", 
+           extra = "merge") %>%
+  mutate(id = gsub("[^0-9]*","", str_extract(type, "\\[[^()]+\\]")),
+         type = gsub("\\[[^()]+\\]", "", type),
+         type = factor(type, levels = c("pop", "subpop", "speaker")),
+         id = case_when(
+           is.na(id) ~ "pop",
+           type == "subpop" & id == 1 ~ "child",
+           type == "subpop" & id == 2 ~ "parent",
+           T ~ id)
+         ) %>%
+  left_join(distinct(long_present, subject, uid, person) %>% 
+              mutate(uid = as.character(uid)), by = c("id" = "uid")) %>%
+  arrange(type, parameter) %>%
+  mutate(id = if_else(is.na(subject), id, as.character(subject))) %>%
+  select(-subject)
+
+write_feather(parameter_cis, "stanfits/oldmodel_cis.feather")
 ```
 
 

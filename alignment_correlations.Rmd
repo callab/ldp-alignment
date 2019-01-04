@@ -24,6 +24,7 @@ library(RMySQL)
 
 ```{r Load Fit Stats}
 fit_stats <- read_feather("results/together_fit_stats.feather")
+old_model_stats <- read_feather("stanfits/oldmodel_cis.feather")
 ```
 
 ```{r ldp_functions}
@@ -153,5 +154,26 @@ ppvt_fit_stats %>%
 fit_stats %>% 
   group_by(measure) %>% 
   summarise(value = mean(value))
+```
+
+```{r}
+avg_subj_measure <- measures %>% 
+  group_by(subject, measure) %>% 
+  summarise(value= mean(value)) 
+
+old_stats <- old_model_stats %>%
+  filter(type == "speaker") %>%
+  mutate(id = as.numeric(id)) %>%
+  left_join(avg_subj_measure, fit_stats, by = c("id" = "subject")) %>%
+  filter(!is.na(value))
+  
+old_stats %>% 
+  group_by(person, parameter, measure) %>% 
+  mutate(correlation = cor(value, mean)) %>% 
+  select(person, measure, parameter, correlation) %>% 
+  distinct() %>%
+  arrange(person, measure, parameter) %>%
+  write_csv("old_model_cors.csv")
+
 ```
 
