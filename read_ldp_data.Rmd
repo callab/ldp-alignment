@@ -283,11 +283,62 @@ StdDev <- 1
 
 fit <- stan(file = "stan_models/alignment_ageboth.stan", chains = 1)
 
+
+# from the cogsci fits
+ # fit_model <- sampling(alignment_model, data = alignment_data, 
+ #                     iter = 200, warmup = 100, chains = 1,
+ #                     control = list(adapt_delta = .8))
+ #  
+ 
 # Twitter model w/o age effects
 # fit <- stan(file = "stan_models/twitter_align.stan", chains = 1)
 
 saveRDS(fit, 'stanfits/oldalignmentfit.rds')
 ```
+
+```{r}
+long_present <- long_present %>%
+  ungroup() %>%
+  mutate(uid = paste0(subject, "_", person)) %>%
+  mutate(uid = as.numeric(as.factor(uid)))
+
+###  STAN DATA ####
+MidAge <- median(long_present$session)
+NumMarkers <- length(unique(liwc$category))
+NumSubPops <- length(unique(long_present$person))
+NumSpeakers <- length(unique(long_present$uid))
+NumObservations <- dim(long_present)[1]
+SpeakerSubPop <- long_present %>% 
+  distinct(person, uid) %>%
+  mutate(subpop =  as.numeric(as.factor(person))) %>%
+  pull(subpop) # Child - 1; Parent - 2
+SpeakerId <-long_present$uid
+SpeakerAge <- long_present$session
+MarkerType <- as.numeric(as.factor(long_present$category)) #see liwc_markers
+NumUtterancesAB <- long_present$NumUtterancesAB
+NumUtterancesNotAB <- long_present$NumUtterancesNotAB
+CountsAB <- long_present$CountsAB
+CountsNotAB <- long_present$CountsNotAB
+StdDev <- 1
+###################
+
+fit_hierarchical <- stan("stan_models/alignment_fullyhierarchical.stan", 
+                         chains = 1, iter = 200, warmup = 100, 
+                         control = list(adapt_delta = .9))
+
+
+```
+
+
+```{r}
+
+sum_hierarchical %>%
+  filter(!str_detect(var, "Marker"), 
+         !str_detect(var, "observation"),
+         !str_detect(var, "mu"))
+
+```
+
 
 ```{r}
 
