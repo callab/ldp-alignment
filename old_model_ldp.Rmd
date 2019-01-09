@@ -28,6 +28,7 @@ library(rstan)
 library(zoo)
 library(directlabels)
 library(broom.mixed)
+library(tidyboot)
 
 opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
                error = FALSE, cache = TRUE, tidy = FALSE)
@@ -96,8 +97,6 @@ session_ages <- visits %>%
 
 Get other measures
 ```{r load_measures}
-ldp <- connect_to_ldp()
-
 # subject level ppvt info
 ppvt <- get_table(ldp, "ppvt") %>%
   collect() %>%
@@ -915,23 +914,30 @@ momed_data <- developmental_subpop_parameters  %>%
 
 momed_mean_data <-  momed_data %>%
   group_by(parameter, mother_ed) %>%
-  tidyboot_mean(mean) 
+  tidyboot_mean(mean) %>%
+  ungroup() %>%
+  mutate(parameter = factor(parameter, 
+                            levels = c("eta_ab_subpop", "alpha_subpop"),
+                            labels = c("alignment", "change")))
 
+jpeg("momed_params.jpeg", width = 8, height = 4, units = "in", res = 600)
 ggplot(momed_mean_data, aes(x = mother_ed, 
-                       color = parameter, group = parameter,
-                       y = empirical_stat)) + 
-  geom_pointrange(aes(y = empirical_stat, 
-             ymin = ci_lower, ymax = ci_upper, color = parameter,
-             group = parameter)) + 
-  geom_smooth(aes(y = empirical_stat), method = "loess") +
-     geom_hline(yintercept=0,linetype='dashed') +
+                        ymin = ci_lower, ymax = ci_upper, 
+                        color = parameter,
+                       y = empirical_stat, group = parameter, 
+                       label = parameter)) + 
+  geom_pointrange() + 
+  geom_line()+
+  geom_hline(yintercept=0,linetype='dashed') +
+  scale_color_brewer(palette = "Set1") +
+  geom_dl(method = list("last.qp", dl.trans(x = x + 0.2), cex = 1.2)) +
+  labs(x = "Mother's Education", y = "Parameter Estimate") +
   theme_classic(base_size = 18) +
   theme(panel.grid = element_blank(), legend.position = "none",
          axis.title.x=element_text(vjust=-.5),
-        axis.title.y=element_text(vjust=1)) 
+        axis.title.y=element_text(vjust=1))
+dev.off()
 
-+
-     geom_dl(method = list("last.qp", cex=1.1))
 
 ```
 
@@ -960,22 +966,32 @@ ggplot(momed_mean_data, aes(x = mother_ed,
      geom_dl(method = list("smart.grid", cex=1.1))
 ```
 
-+ 
-  geom_dl
 ```
 
 ```{r}
-developmental_subpop_parameters  %>%
+plot_vals <- developmental_subpop_parameters  %>%
   left_join(measures %>% 
               filter(measure == "ppvt") %>%
-              select(subject, measure, value, mother_ed, sex)) %>%
+              select(subject, measure, value, mother_ed)) %>%
   filter(person == "Parent", 
          parameter %in% c("alpha_subpop", "eta_ab_subpop")) %>%
-  group_by(mother_ed, sex, subject, parameter, mean) %>%
+  group_by(mother_ed, subject, parameter, mean) %>%
   summarise(mean_value = mean(value), 
             range_value = last(value) - first(value)) %>%
-  filter(parameter == "eta_ab_subpop") %>%
-  lm(range_value ~ mean + sex + as.numeric(mother_ed), data = .) %>%
+  filter(parameter %in% c("eta_ab_subpop", "alpha_subpop")) %>%
+  spread(parameter, mean) 
+  
+jpeg("alignment_ppvt_group.jpeg", width = 4, height = 4, units = "in", res = 600)
+ggplot(plot_vals, aes(x = eta_ab_subpop, y = range_value, 
+color = mother_ed, group = 1)) + 
+geom_point() + 
+geom_smooth(method = "lm") + 
+labs(x = "Alignment", y = "Gain in PPVT") +
+theme_classic(base_size = 18)
+dev.off()  
+  
+  %>%
+  lm(range_value ~ eta_ab_subpop, data = .) %>%
   summary()
 
 
