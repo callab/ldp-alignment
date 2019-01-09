@@ -1,0 +1,1032 @@
+---
+title: "Linguistic Alignment in LDP"
+author: "Dan Yurovksy"
+date: '`r Sys.Date()`'
+output:
+  pdf_document:
+  toc: no
+html_document:
+  code_folding: show
+number_sections: no
+theme: lumen
+toc: no
+toc_float: no
+---
+  
+```{r setup, include = FALSE}
+library(knitr)
+library(data.table)
+library(tidyverse)
+library(readr)
+library(stringr)
+library(DT)
+library(tidytext)
+library(RSQLite)
+library(feather)
+library(xlsx)
+library(rstan)
+library(zoo)
+library(directlabels)
+library(broom.mixed)
+
+opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+               error = FALSE, cache = TRUE, tidy = FALSE)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+
+
+```{r ldp_functions}
+source("read_ldp.R")
+```
+
+```{r, eval=T, message=FALSE}
+MIN_VISITS <- 5
+
+Mode <- function(x) {
+  x <- x[!is.na(x)]
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+#### Load and Clean Data
+# Read in LDP data
+ldp <- connect_to_ldp()
+
+# subject demographics
+demos <- get_table(ldp, "subjects") %>%
+        filter(lesion == "") %>%
+        select(id, sex, race, ethn) %>%
+        collect()
+
+# visits information and more subject demographics
+visits <- get_table(ldp, "home_visits") %>%
+  distinct(id, age_years, subject, visit_type, completed, income_category, 
+           mother_education) %>%
+  collect() %>%
+  filter(visit_type != "SB5") %>%
+  mutate(visit_type = as.numeric(gsub("[^0-9]", "", visit_type))) %>%
+  rename(visit = visit_type) %>%
+  mutate(completed = as.logical(completed),
+         income_category = as.numeric(income_category))
+
+subjs <- visits %>%
+  group_by(subject) %>%
+  summarise(completed = sum(completed),
+            income_category = Mode(income_category),
+            mother_education = Mode(mother_education)) %>%
+  filter(completed >= 5) %>%
+  select(-completed) %>%
+  right_join(demos, by = c("subject" = "id")) %>%
+  rename(mother_ed = mother_education) %>%
+  mutate(mother_ed = factor(mother_ed, 
+                            levels = c("Some High School", 
+                                       "High School or GED", 
+                                       "Some College or Trade School",
+                                       "Bachelor's Degree", 
+                                       "Advanced Degree")))
+
+session_ages <- visits %>%
+        filter(subject %in% subjs$subject, completed) %>%
+        select(subject, visit, age_years) %>%
+        rename(age = age_years) %>%
+        arrange(subject, visit)
+```
+
+Get other measures
+```{r load_measures}
+ldp <- connect_to_ldp()
+
+# subject level ppvt info
+ppvt <- get_table(ldp, "ppvt") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+ # rename(ppvt = ppvt_percentile) %>%
+  # mutate(ppvt = if_else(ppvt == "<0.1", "0",
+  #                       if_else(ppvt == ">.99", "100", ppvt))) %>%
+  # mutate(ppvt = as.numeric(ppvt)) %>%
+  rename(ppvt = ppvt_raw) %>%
+  select(subject, visit, age_years, ppvt)
+  
+cdi_ws <- get_table(ldp, "cdi_words_and_sentences") %>%
+  select(id, visit, cdis_1a1_num, cdis_1a1_perc, 
+         cdis_2e_num, cdis_2e_perc) %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(cdi_ws = cdis_1a1_num, sent_comp = cdis_2e_num) %>%
+  select(subject, visit, age_years, cdi_ws, sent_comp) %>%
+  arrange(subject, visit)
+
+syntax <- get_table(ldp, "syntax") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(syntax = syntax_raw) %>%
+  select(subject, visit, age_years, syntax) %>% 
+  arrange(subject, visit)
+
+wppsi <- get_table(ldp, "wppsi_block_design") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  arrange(subject, visit) %>%
+  filter(!is.na(wppsi_block_raw)) %>%
+  select(subject, visit, age_years, wppsi_block_raw) %>%
+  rename(wppsi_block = wppsi_block_raw)
+
+measures <- full_join(ppvt, cdi_ws, 
+                      by = c("subject", "visit", "age_years")) %>%
+  full_join(syntax, by = c("subject", "visit", "age_years")) %>%
+  full_join(wppsi, by = c("subject", "visit", "age_years")) %>%
+  left_join(select(subjs, subject, income_category, sex, mother_ed)) %>%
+  gather(measure, value, ppvt, cdi_ws, sent_comp, syntax, wppsi_block) %>%
+  filter(!is.na(value)) %>%
+  arrange(subject, measure, visit) %>%
+  mutate(person = "Child") 
+
+```
+
+
+
+```{r fit_alignment}
+fit_alignment <- function(alignment_df, sd = .25) {
+  
+  alignment_data <- list(NumMarkers = length(unique(alignment_df$category)),
+                         NumSubPops = length(unique(alignment_df$uid)),
+                         NumObservations = nrow(alignment_df),
+                         SpeakerSubPop = alignment_df$uid,
+                         MarkerType = as.numeric(as.factor(alignment_df$category)),
+                         NumUtterancesAB = alignment_df$NumUtterancesAB,
+                         NumUtterancesNotAB = alignment_df$NumUtterancesNotAB,
+                         CountsAB = alignment_df$CountsAB,
+                         CountsNotAB = alignment_df$CountsNotAB,
+                         StdDev=sd,
+                         SpeakerAge = alignment_df$session,
+                         MidAge = mean(unique(alignment_df$session)))
+
+  fit_model <- sampling(alignment_model, data = alignment_data, 
+                     chains = 4, iter = 2000,
+                     control = list(adapt_delta = .8, max_treedepth = 15))
+  
+  return(fit_model)
+}
+```
+
+
+```{r alignment_analysis_helpers}
+subpop_parameters <- c("eta_ab_subpop", "alpha_subpop", "beta_subpop")
+pop_parameters <- c("eta_ab_pop", "alpha_pop", "beta_pop")
+
+CI_UPPER <- .975
+CI_LOWER <- .025
+
+SE_UPPER <- .84
+SE_LOWER <- .16
+  
+extract_subpop_samples <- function(model) {
+
+  extract_helper <- function(var) {
+    data.frame(extract(model, var)) %>% 
+      bind_rows() %>%
+      mutate(sample = 1:n()) %>%
+      gather_("subpop_num", var, names(.)[1:(length(names(.))-1)]) %>%
+      ungroup() %>%
+      mutate(subpop_num = as.numeric(sub(paste0(var, "."), "", subpop_num)))
+  }
+  
+  Reduce(left_join, lapply(subpop_parameters, extract_helper))
+}
+
+extract_pop_samples <- function(model) {
+
+  #print(model)
+  
+  extract_helper <- function(var) {
+    data.frame(extract(model, var)) %>% 
+      bind_rows() %>%
+      mutate(sample = 1:n())
+  }
+  
+  Reduce(left_join, lapply(pop_parameters, extract_helper))
+}
+```
+
+```{r SCRIPT FOR PRE-PROCESSING DATA AND RUNNING OLD STAN MODEL}
+raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
+
+liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
+  rename(word = X1, category = X2)
+
+alignment_model = stan_model(file = "stan_models/alignment_ageboth.stan")
+
+long_present <- raw_long_present %>% 
+  arrange(subject, session, category, run) %>%
+  group_by(subject, session, category) %>%
+  mutate(lag_count = lag(count)) %>%
+  filter(!is.na(lag_count)) %>%
+  group_by(subject, session, person, category) %>%
+  mutate(BA = count > 0 & lag_count > 0,
+         notBA = count == 0 & lag_count > 0,
+         BnotA = count > 0 & lag_count == 0,
+         notBnotA = count == 0 & lag_count == 0) %>%
+  summarise_at(vars(BA,notBA,BnotA,notBnotA), sum) %>%
+  mutate(NumUtterancesAB = BA +notBA, 
+         NumUtterancesNotAB = BnotA + notBnotA) %>%
+  rename(CountsAB = BA, CountsNotAB = BnotA) %>%
+  select(-notBA, - notBnotA) %>%
+  ungroup()
+
+keep_subjs <- visits %>% filter(subject %in% long_present$subject) %>%
+  group_by(subject) %>% 
+  summarise(completed = mean(completed)) %>% 
+  arrange(desc(completed)) %>%
+  filter(completed > .8)
+
+model_data <- long_present %>%
+  filter(subject %in% keep_subjs$subject) %>%
+  mutate(uid = as.numeric(as.factor(subject)))
+
+
+#liwc_markers <- as.numeric(as.factor(unique(liwc$category)))
+
+developmental_data <- model_data %>%
+  group_by(person) %>%
+  nest() %>%
+  mutate(model = map(data, fit_alignment)) 
+
+pop_samples  <- developmental_data %>%
+  mutate(samples = map(model, extract_pop_samples)) %>%
+  select(-data, -model) %>%
+  unnest()
+
+subpop_samples  <- developmental_data %>%
+  mutate(samples = map(model, extract_subpop_samples)) %>%
+  select(-data, -model) %>%
+  unnest() %>%
+  left_join(select(model_data, subject, uid) %>% distinct(), 
+            by = c("subpop_num" = "uid")) %>%
+  select(-subpop_num)
+```
+
+```{r get_parameters}
+
+developmental_parameters <- pop_samples %>%
+  group_by(person) %>%
+  gather(parameter, value, -sample, -person) %>%
+  group_by(person, parameter) %>%
+  summarise(mean = mean(value), ci_lower = quantile(value, CI_LOWER),
+            ci_upper = quantile(value, CI_UPPER))
+
+kable(developmental_parameters)
+
+developmental_subpop_parameters <- subpop_samples %>%
+ gather(parameter, value, -sample, -person, -subject) %>%
+  group_by(person, subject, parameter) %>%
+  summarise(mean = mean(value), ci_lower = quantile(value, CI_LOWER),
+            ci_upper = quantile(value, CI_UPPER))
+
+developmental_subpop_parameters %>% 
+  group_by(person, parameter, subject) %>%
+  summarise(mean = mean(mean)) %>%
+  ggplot(aes(x = mean)) + 
+  facet_grid(person ~ parameter) +
+  geom_histogram() 
+
+developmental_subpop_parameters %>%
+  filter(parameter == "alpha_subpop", person == "Parent") %>%
+  arrange(ci_upper) %>% View()
+
+```
+
+```{r parameters_plot, fig.width = 4, fig.height = 6}
+all_parameters <- developmental_parameters %>%
+  ungroup() %>%
+  mutate(parameter = factor(parameter, 
+                            levels = c("eta_ab_pop","alpha_pop","beta_pop"),
+                            labels = c("Alignment~(eta^align)","Alignment%.%Age~(alpha)",
+                                       "Baseline%.%Age~(beta)")),
+         group = factor(person, levels = c("Parent", "Child"),
+                        labels = c("Parents", "Children")))
+
+#quartz(width = 6, height = 3)
+ggplot(aes(x = group, y = mean, fill= group, 
+            label = group),
+        data = all_parameters) +
+  facet_grid(. ~ parameter, scales = "free_x", space = "free_x", 
+             labeller = label_parsed) +
+  geom_bar(position = position_dodge(.5), stat = "identity") +
+  geom_linerange(aes(ymax = ci_upper, ymin = ci_lower),
+                   position = position_dodge(.5)) +
+  geom_hline(yintercept = 0) + 
+  scale_fill_brewer(palette = "Set1", guide = FALSE) +
+  scale_x_discrete(name = "", drop = T) +
+  scale_y_continuous(name = "Population parameter estimate", limits = c(-.25, .8),
+                     breaks = seq(-2, 1, .2)) +
+   theme_bw(base_size = 14) +
+   theme(panel.grid = element_blank(), legend.position = c(.8,.8),
+       axis.title.x=element_text(vjust=-.5), axis.title.y=element_text(vjust=1))
+```
+
+
+```{r hpds, fig.width = 8.5, fig.height = 4}
+ages <- long_present %>%
+  ungroup() %>%
+  distinct(session) %>%
+  mutate(age = 14 + 4*(session - 1))
+
+mid_age <- mean(ages$session)
+
+hpds <- map(1:nrow(ages), 
+            function(x) mutate(pop_samples, age_num = x)) %>%
+  bind_rows() %>%
+  group_by(person, age_num) %>%
+  mutate(age_dif = age_num - mid_age) %>%
+  mutate(prediction = eta_ab_pop + ((age_num-mid_age) * alpha_pop)) %>%
+  summarize(mean = mean(prediction), se_lower = quantile(prediction, SE_LOWER), 
+                      se_upper = quantile(prediction, SE_UPPER)) %>%
+  left_join(ages, by = c("age_num" = "session")) %>%
+  ungroup() %>%
+  mutate(person = factor(person, levels = c("Parent", "Child"),
+                         labels = c("Parents", "Children")))
+
+jpeg("ldp_hpds.jpg", width = 6.5, height = 3, units = "in", res = 600)
+# quartz(width = 8.5, height = 4)
+ ggplot(hpds, aes(x = age, y = mean, label = person, 
+            group = person, color = person, fill = person)) + 
+   geom_point(size = 2) +
+#    geom_pointrange(aes(ymax = se_upper, ymin = se_lower),
+#                    size = .5) +
+   geom_ribbon(aes(ymax = se_upper, ymin = se_lower),
+               alpha = .3, size = 0) +
+   geom_line() +
+   scale_color_brewer(palette = "Set1", guide = FALSE) +
+   scale_fill_brewer(palette = "Set1", guide = FALSE) +
+   theme_bw(base_size = 16) +
+   scale_x_continuous(name = "Child\'s Age (months)",
+                      breaks=seq(12,60,6), limits = c(10, 62)) +
+   scale_y_continuous(limits = c(-.1, 1.1), breaks = seq(0,1.1,.2),
+                     name = "Linguistic Alignment") +
+   geom_hline(yintercept=0,linetype='dashed') +
+   theme(panel.grid = element_blank(), legend.position = c(.8,.8),
+         axis.title.x=element_text(vjust=-.5), axis.title.y=element_text(vjust=1)) +
+     geom_dl(method = list(dl.trans(x = x -.2), "first.qp", cex=.9))
+ dev.off()
+``` 
+
+```{r subpop_hpds, fig.width = 8.5, fig.height = 4}
+subpop_hpds <- map(1:nrow(ages), 
+            function(x) mutate(subpop_samples, visit = x)) %>%
+  bind_rows() %>%
+  group_by(person, subject, visit) %>%
+  mutate(prediction = eta_ab_subpop + ((visit-mid_age) * alpha_subpop)) %>%
+  summarize(mean = mean(prediction), se_lower = quantile(prediction, SE_LOWER), 
+                      se_upper = quantile(prediction, SE_UPPER)) 
+
+
+
+ #quartz(width = 8, height = 5)
+png("ldp_hpds.png",width = 8, height = 5, units = "in", res = 600)
+ggplot(aes(x = age_num, y = mean, label = group, 
+          group = group, color = group, fill = group),
+      data = subpop_hpds) +
+ facet_wrap(~ subject, ncol = 3) +
+#    geom_pointrange(aes(ymax = se_upper, ymin = se_lower),
+#                    size = .25) +
+ geom_point() +
+ geom_ribbon(aes(ymax = se_upper, ymin = se_lower),
+             alpha = .3, size = 0) +
+ geom_line() +
+ scale_color_brewer(palette = "Set1", guide = FALSE) +
+ scale_fill_brewer(palette = "Set1", guide = FALSE) +
+ theme_bw(base_size = 14) +
+ scale_x_continuous(name = "Child\'s Age (months)",
+                    breaks=seq(.5,6.5,1), limits=c(.5,6.5),
+                     labels=seq(12,48,6))+
+ scale_y_continuous(limits = c(-.1,3), breaks = seq(0,3,1),
+                    name = "Linguistic Alignment") +
+ geom_hline(yintercept=0,linetype='dashed') +
+ theme(panel.grid = element_blank(), legend.position = c(.8,.8),
+       axis.title.x=element_text(vjust=-.5), axis.title.y=element_text(vjust=1)) +
+   geom_dl(method = list("smart.grid", cex=1.1))
+dev.off()
+```
+
+
+```{r correlate (avg subject) ppvt }
+avg_subj_ppvt <- measures %>% 
+  filter(measure == 'ppvt') %>%
+  ungroup() %>% 
+  group_by(subject) %>% 
+  summarise(value= mean(value)) %>% 
+  rename(ppvt = value)
+
+ppvt_fit_stats <- left_join(avg_subj_ppvt, fit_stats, by = c('subject'='subj')) %>% 
+  na.omit()
+
+# correlations
+ppvt_fit_stats %>% 
+  group_by(measure) %>% 
+  mutate(correlation = cor(ppvt,value)) %>% 
+  select(measure, correlation) %>% 
+  distinct()
+```
+
+```{r}
+fit_stats %>% 
+  group_by(measure) %>% 
+  summarise(value = mean(value))
+```
+
+```{r}
+avg_subj_measure <- measures %>% 
+  filter(subject %in% keep_subjs$subject) %>%
+  group_by(income_category, mother_ed, sex, subject, measure) %>% 
+  summarise(value_mean = mean(value), 
+            value_change = range(value) %>% diff())
+
+old_stats <- developmental_subpop_parameters %>%
+  left_join(avg_subj_measure) %>%
+  filter(!is.na(value_mean)) %>%
+  mutate(measure = factor(measure, levels = c("wppsi_block", "sent_comp", "syntax", "ppvt", "cdi_ws")))
+  
+old_stats %>% 
+  group_by(person, parameter, measure) %>% 
+  mutate(correlation = cor(value_mean, mean)) %>% 
+  select(person, measure, parameter, correlation) %>% 
+  distinct() %>%
+  arrange(person, measure, parameter) %>%
+  View()
+
+lm(value_change ~ mean + income_category, 
+     data = filter(old_stats, measure == "cdi_ws", person == "Parent",
+                   parameter == "alpha_subpop")) %>%
+  summary()
+
+old_stats %>%
+  mutate(measure = factor(measure))
+
+lm(income_category ~ scale(value_mean) * measure, data = old_stats) %>%
+  summary()
+
+```
+
+```{r}
+age_changes <- measures %>%
+  filter(measure %in% c("cdi_ws", "ppvt", "sent_comp", "syntax")) %>%
+  filter(subject %in% keep_subjs$subject) %>%
+  group_by(measure) %>%
+  nest() %>%
+  mutate(model = map(data, ~lmer(value ~ income_category * age_years + (1|subject),
+                           data = .))) %>%
+  mutate(model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(effect == "fixed") %>%
+  select(-group, -effect)
+  
+
+measures %>%
+  filter(measure %in% c("cdi_ws", "ppvt", "sent_comp"),
+         subject %in% keep_subjs$subject) %>%
+  select(-person) %>%
+  left_join(subpop_hpds) %>%
+  #  mutate(value = logit(value)) %>%
+  filter(!is.na(person)) %>%
+  group_by(measure, person) %>%
+  nest() %>%
+  mutate(model = map(data, ~lmer(value ~ income_category * age_years + mean + (1|subject),
+                           data = .))) %>%
+  mutate(model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(effect == "fixed") %>%
+  select(-group, -effect) %>% 
+  View()
+
+
+measures %>%
+  filter(measure %in% c("ppvt")) %>%
+  select(-person) %>%
+  left_join(developmental_subpop_parameters) %>%
+  filter(!is.na(person)) %>%
+  group_by(person, measure) %>%
+  mutate(value = scale(value)) %>%
+  group_by(measure, person, parameter) %>%
+  nest() %>%
+  mutate(model = map(data, ~lmer(value ~ income_category * age_years + mean * age_years + (1|subject),
+                           data = .))) %>%
+  mutate(model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(effect == "fixed") %>%
+  select(-group, -effect) %>% 
+  View()
+
+
+measures %>%
+  filter(measure %in% c("ppvt", "syntax")) %>%
+  select(-person) %>%
+  left_join(developmental_subpop_parameters) %>%
+  filter(!is.na(person)) %>%
+  group_by(person, measure) %>%
+  mutate(value = scale(value)) %>%
+  ungroup() %>%
+  mutate(parameter = factor(parameter, 
+                            levels = c("eta_ab_subpop", "alpha_subpop",
+                                       "beta_subpop"))) %>%
+  group_by(person, parameter) %>%
+  nest() %>%
+  mutate(model = map(data, ~lmer(value ~ mean * age_years * measure + (1|subject),
+                           data = .))) %>%
+  mutate(model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(effect == "fixed") %>%
+  select(-group, -effect) %>% 
+  View()
+
+measures %>%
+  filter(measure %in% c("cdi_ws", "ppvt", "sentcomp")) %>%
+  select(-person) %>%
+  group_by(income_category, subject, measure) %>%
+  mutate(value = logit(value)) %>%
+  summarise(mid = mean(value), range = last(value) - first(value)) %>%
+  left_join(developmental_subpop_parameters) %>%
+  filter(!is.na(person)) %>%
+  group_by(measure, person, parameter) %>%
+  nest() %>%
+  mutate(model = map(data, ~lm(range ~ income_category  + mean + mid,
+                           data = .))) %>%
+  mutate(model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  View()
+
+
+
+ggplot(measures %>% filter(subject %in% keep_subjs$subject),
+       aes(x = age_years, y = value, color = as.factor(income_category),
+                     group= as.factor(income_category))) + 
+  facet_wrap(~measure, scales = "free_y") +
+  geom_smooth(se = F, method = "lm")
+
+ggplot(measures %>% filter(subject %in% keep_subjs$subject, measure == "ppvt"),
+       aes(x = age_years, y = value, color = as.factor(income_category),
+                     group= as.factor(income_category))) + 
+  geom_point()
+
+  geom_smooth(se = F, method = "lm")
+
+```
+
+```{r}
+ developmental_subpop_parameters %>%
+  left_join(filter(measures, 
+                   subject %in% keep_subjs$subject) %>% select(-person)) %>%
+  group_by(person, subject, income_category, parameter, measure, mean) %>%
+  summarise(value = mean(value)) %>%
+  spread(person, mean) %>%
+  group_by(measure, parameter) %>%
+  summarise(cor = cor(Child, Parent))
+
+ developmental_subpop_parameters %>%
+  left_join(filter(measures, 
+                   subject %in% keep_subjs$subject) %>% select(-person)) %>%
+  group_by(person, subject, income_category, parameter, measure, mean) %>%
+  summarise(value = mean(value)) %>%
+  unite(person_param, person, parameter, sep = "_") %>%
+  pairwise_cor(person_param, subject, mean)
+```
+ 
+```{r}
+setup_data <- measures %>%
+  filter(subject %in% keep_subjs$subject, measure == "ppvt") %>% 
+  select(-person)
+
+lm1 <- lm(value ~  income_category * log(age_years) + sex * log(age_years),
+            data = setup_data) 
+
+resids <- setup_data %>%
+  mutate(resid = resid(lm1)) 
+
+# resid_data <- developmental_subpop_parameters %>%
+#   left_join(resids) %>%
+#   group_by(person, parameter) %>%
+#   nest() %>%
+#   mutate(cor = map(data, ~cor.test(.$resid, .$mean) %>% tidy)) %>%
+#   select(-data) %>%
+#   unnest()
+
+resid_data <- developmental_subpop_parameters %>%
+  left_join(resids) %>%
+  select(-ci_lower, -ci_upper) %>%
+  group_by(person, parameter) %>%
+  nest() %>%
+  mutate(model = map(data, ~lm(resid ~mean,
+       data = .)),
+       model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(term == "mean")
+
+developmental_subpop_parameters %>%
+  left_join(resids) %>%
+  select(-ci_lower, -ci_upper) %>%
+  filter(parameter == "alpha_subpop", person == "Parent") %>%
+  ungroup() %>%
+  summarise(cor = cor(mean, resid))
+
+  ggplot(aes(x = mean, y = resid)) + 
+  geom_point()
+
+%>%
+  group_by(person, parameter) %>%
+  nest() %>%
+  mutate(model = map(data, ~lm(resid ~mean,
+       data = .)),
+       model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(term == "mean")
+
+
+resid_data <- developmental_subpop_parameters %>%
+  left_join(resids) %>%
+  select(-ci_lower, -ci_upper) %>%
+  spread(parameter, mean) %>%
+  group_by(person) %>%
+  nest() %>%
+  mutate(model = map(data, ~lm(resid ~ 0 + eta_ab_subpop + alpha_subpop:age_years,
+       data = .)),
+       model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() 
+
+
+```
+ 
+ 
+```{r}
+setup_data1 <- measures %>%
+  filter(subject %in% keep_subjs$subject, 
+         measure %in% c("ppvt", "cdi_ws", "sent_comp")) %>% 
+  filter(subject != 124) %>%
+  ungroup() %>%
+  group_by(measure) %>%
+  mutate(value = scale(value)) %>%
+ # mutate(value = logit(value/100, adjust = .01)) %>%
+  select(-person) %>%
+  group_by(subject) %>%
+  mutate(measure = factor(measure, 
+                          levels = c("cdi_ws", "ppvt", "sent_comp")))
+
+contrasts(setup_data1$measure) <- my.simple
+
+setup_data <- setup_data1 %>%  
+  nest() %>%
+  mutate(model = map(data, ~lm(value ~ age_years * measure,
+                               data = .))) %>%
+  mutate(model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(term %in% c("age_years", "(Intercept")) %>%
+  mutate(term = if_else(term == "age_years", "slope", "intercept")) %>%
+  select(subject, term, estimate)
+
+tmp <- setup_data %>%
+  left_join(developmental_subpop_parameters %>% distinct(subject, person, parameter, mean)) %>%
+  left_join(measures %>% select(subject, income_category) %>% distinct()) %>%
+  group_by(term, parameter, person) %>%
+  filter(!is.na(person)) %>%
+  nest() %>%
+  mutate(model = map(data, 
+                     ~lm(estimate ~ mean + income_category, 
+                         data = .)),
+         model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(term1 != "(Intercept)")
+```
+
+```{r}
+setup_data <- measures %>%
+  filter(subject %in% keep_subjs$subject, 
+         measure %in% c("ppvt")) %>% 
+  filter(subject != 124) %>%
+  ungroup() %>%
+  group_by(measure) %>%
+#  mutate(value = logit(value/100, adjust = .01)) %>%
+  select(-person) %>%
+  group_by(subject) %>%
+  nest() %>%
+  mutate(model = map(data, ~lm(value ~ age_years,
+                               data = .))) %>%
+  mutate(model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(term %in% c("age_years", "(Intercept)")) %>%
+  mutate(term = if_else(term == "age_years", "slope", "intercept")) %>%
+  select(subject, term, estimate)
+
+tmp <- setup_data %>%
+  left_join(developmental_subpop_parameters %>% distinct(subject, person, parameter, mean)) %>%
+  left_join(measures %>% select(subject, income_category, sex) %>%
+              distinct()) %>%
+  group_by(term, parameter, person) %>%
+  filter(!is.na(person)) %>%
+  nest() %>%
+  mutate(model = map(data, 
+                     ~lm(estimate ~ mean + income_category + sex, 
+                         data = .)),
+         model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(term1 != "(Intercept)")
+
+
+
+setup_data %>%
+  left_join(developmental_subpop_parameters %>% 
+              distinct(subject, person, parameter, mean)) %>%
+  left_join(measures %>% select(subject, income_category, mother_ed, sex) %>% distinct()) %>%
+  #  filter(income_category != 2) %>%
+  group_by(term, parameter, sex, mother_ed, person) %>%
+  filter(!is.na(person)) %>%
+  filter(person == "Parent", 
+         parameter %in% c("eta_ab_subpop", "alpha_subpop")) %>%
+  group_by(parameter, term, sex) %>%
+  summarise(cor = cor(mean, estimate), n = n())
+
+setup_data %>%
+  left_join(developmental_subpop_parameters %>% distinct(subject, person, parameter, mean)) %>%
+  left_join(measures %>% select(subject, income_category, sex, mother_ed) %>% 
+              distinct()) %>%
+  group_by(term, parameter, person) %>%
+  filter(!is.na(person)) %>%
+ # filter(income_category != 2) %>%
+  filter(person == "Parent", parameter %in%
+           c("eta_ab_subpop", "alpha_subpop")) %>%
+  ggplot(aes(x = mean, y = estimate, 
+             color = mother_ed, fill = mother_ed)) + 
+  facet_grid(parameter ~ term, scale = "free") + 
+  #geom_point() + 
+  geom_smooth(method = "lm")
+
+setup_data %>%
+  left_join(developmental_subpop_parameters %>% distinct(subject, person, parameter, mean)) %>%
+  left_join(measures %>% select(subject, income_category, sex, mother_ed) %>% 
+              distinct()) %>%
+  group_by(term, parameter, person) %>%
+  filter(!is.na(person)) %>%
+ # filter(income_category != 2) %>%
+  filter(person == "Parent", parameter %in%
+           c("eta_ab_subpop", "alpha_subpop")) %>%
+  ggplot(aes(x = mean,
+             color = sex)) + 
+  facet_grid(parameter ~ term, scale = "free") + 
+  geom_density()
+
+
+%>%
+  nest() %>%
+  mutate(model = map(data, 
+                     ~lm(estimate ~ mean + income_category, 
+                         data = .)),
+         model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(term1 != "(Intercept)")
+
+
+```
+
+```{r}
+  summarise(cor = cor(estimate, income_category))
+
+
+  summarise(#   mutate(cor = map(data, ~cor.test(.$resid, .$mean) %>% tidy)) %>%)
+
+
+resids <- setup_data %>%
+  mutate(resid = resid(lm1)) 
+
+# resid_data <- developmental_subpop_parameters %>%
+#   left_join(resids) %>%
+#   group_by(person, parameter) %>%
+#   nest() %>%
+#   mutate(cor = map(data, ~cor.test(.$resid, .$mean) %>% tidy)) %>%
+#   select(-data) %>%
+#   unnest()
+
+resid_data <- developmental_subpop_parameters %>%
+  left_join(resids) %>%
+  select(-ci_lower, -ci_upper) %>%
+  group_by(person, parameter) %>%
+  nest() %>%
+  mutate(model = map(data, ~lm(resid ~mean,
+       data = .)),
+       model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() %>%
+  filter(term == "mean")
+
+
+resid_data <- developmental_subpop_parameters %>%
+  left_join(resids) %>%
+  select(-ci_lower, -ci_upper) %>%
+  spread(parameter, mean) %>%
+  group_by(person) %>%
+  nest() %>%
+  mutate(model = map(data, ~lm(resid ~ eta_ab_subpop + alpha_subpop:age_years,
+       data = .)),
+       model = map(model, tidy)) %>%
+  select(-data) %>%
+  unnest() 
+
+
+```
+
+```{r}
+lmer1 <- measures %>% 
+  filter(subject %in% keep_subjs$subject, measure == "ppvt") %>%
+  lmer(value ~ log(age_years) * income_category + (1|subject),
+       data = .) 
+
+lmer2 <- measures %>% 
+  filter(subject %in% keep_subjs$subject, measure == "ppvt") %>%
+  lmer(value ~ age_years * income_category + (1|subject),
+       data = .) 
+```
+ 
+```{r}
+c<-contr.treatment(4)
+my.coding<-matrix(rep(1/4, 12), ncol=3)
+
+my.simple<-c-my.coding
+my.simple
+```
+
+
+```{r}
+om_smooth(method = "lm", se = F)
+
+setup_data %>%
+  left_join(developmental_subpop_parameters %>% 
+              distinct(subject, person, parameter, mean)) %>%
+  left_join(measures %>% select(subject, income_category, sex, mother_ed) %>% 
+              distinct()) %>%
+  filter(person == "Parent") %>%
+  select(subject, income_category, parameter, mean) %>%
+  group_by(parameter, income_category) %>%
+  summarise(sd = sd(mean)/n(), mean = mean(mean))
+
+  group_by(sex, parameter, ) %>%
+  
+  distinct()
+```
+
+```{r}
+measures %>%
+  filter(measure %in% c("ppvt", "cdi_ws")) %>%
+  group_by(mother_ed, subject, measure) %>%
+  summarise(value = mean(value)) %>%
+  spread(measure, value) %>%
+  ungroup() %>%
+  summarise(cor = cor(ppvt, as.numeric(mother_ed), use = "complete"))
+```
+
+Plots
+```{r}
+momed_data <- developmental_subpop_parameters  %>%
+  left_join(measures %>% select(subject, mother_ed) %>% distinct) %>%
+  filter(person == "Parent", 
+         parameter %in% c("alpha_subpop", "eta_ab_subpop"))
+
+momed_mean_data <-  momed_data %>%
+  group_by(parameter, mother_ed) %>%
+  tidyboot_mean(mean) 
+
+ggplot(momed_mean_data, aes(x = mother_ed, 
+                       color = parameter, group = parameter,
+                       y = empirical_stat)) + 
+  geom_pointrange(aes(y = empirical_stat, 
+             ymin = ci_lower, ymax = ci_upper, color = parameter,
+             group = parameter)) + 
+  geom_smooth(aes(y = empirical_stat), method = "loess") +
+     geom_hline(yintercept=0,linetype='dashed') +
+  theme_classic(base_size = 18) +
+  theme(panel.grid = element_blank(), legend.position = "none",
+         axis.title.x=element_text(vjust=-.5),
+        axis.title.y=element_text(vjust=1)) 
+
++
+     geom_dl(method = list("last.qp", cex=1.1))
+
+```
+
+
+
+
+```{r}       
+       aes(x = mother_ed, y = empirical_stat, 
+             ymin = ci_lower, ymax = ci_upper, color = parameter,
+             group = parameter)) +
+  geom_pointrange() + 
+  theme_classic(base_size = 18) + 
+  scale_color_brewer(palette = "Set1") +
+  geom_smooth(method = "lm", se = F) +
+   scale_color_brewer(palette = "Set1", guide = FALSE) +
+   scale_fill_brewer(palette = "Set1", guide = FALSE) +
+   theme_bw(base_size = 14) +
+   scale_x_continuous(name = "Child\'s Age (months)",
+                      breaks=seq(.5,6.5,1), limits=c(.5,6.5),
+                       labels=seq(12,48,6))+
+   scale_y_continuous(limits = c(-.1,3), breaks = seq(0,3,1),
+                      name = "Linguistic Alignment") +
+   geom_hline(yintercept=0,linetype='dashed') +
+   theme(panel.grid = element_blank(), legend.position = c(.8,.8),
+         axis.title.x=element_text(vjust=-.5), axis.title.y=element_text(vjust=1)) +
+     geom_dl(method = list("smart.grid", cex=1.1))
+```
+
++ 
+  geom_dl
+```
+
+```{r}
+developmental_subpop_parameters  %>%
+  left_join(measures %>% 
+              filter(measure == "ppvt") %>%
+              select(subject, measure, value, mother_ed, sex)) %>%
+  filter(person == "Parent", 
+         parameter %in% c("alpha_subpop", "eta_ab_subpop")) %>%
+  group_by(mother_ed, sex, subject, parameter, mean) %>%
+  summarise(mean_value = mean(value), 
+            range_value = last(value) - first(value)) %>%
+  filter(parameter == "eta_ab_subpop") %>%
+  lm(range_value ~ mean + sex + as.numeric(mother_ed), data = .) %>%
+  summary()
+
+
+%>%
+  ggplot(aes(x = mean, y = range_value, color = mother_ed)) + 
+  facet_wrap(~ parameter, scales = "free") + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = F)
+  
+  
+  gather(type, value, mean_value, range_value) %>%
+  group_by(parameter, type) %>%
+  summarise(cor = cor.test(mean, value)$p)
+  
+  
+  ggplot(aes)
+
+
+  group_by(parameter, mother_ed) %>%
+  tidyboot_mean(mean) %>%
+  ggplot(aes(x = mother_ed, y = empirical_stat, 
+             ymin = ci_lower, ymax = ci_upper, color = parameter,
+             group = parameter)) +
+  geom_pointrange() + 
+  theme_classic(base_size = 18) + 
+  scale_color_brewer(palette = "Set1") +
+  geom_smooth(method = "loess", se = F) + 
+  geom_dl
+```
+
+
+```{r}
+developmental_subpop_parameters  %>%
+  left_join(measures %>% select(subject, mother_ed) %>% distinct) %>%
+  filter(person == "Parent", 
+         parameter %in% c("alpha_subpop", "eta_ab_subpop")) %>%
+  ggplot(aes(x = mother_ed, y = mean, color = parameter, group = parameter)) + 
+  geom_jitter() +
+  geom_smooth()
+```
+
+  ggplot(aes(x = mother_ed, y = empirical_stat, 
+             ymin = ci_lower, ymax = ci_upper)) 
+
++
+
+
+  group_by(parameter, mother_ed) %>%
+  tidyboot_mean(mean) %>%
+  ggplot(aes(x = mother_ed, y = empirical_stat, 
+             ymin = ci_lower, ymax = ci_upper)) +
+  facet_wrap(~parameter) +
+  geom_pointrange()
+```

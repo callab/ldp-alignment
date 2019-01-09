@@ -173,7 +173,7 @@ old_stats %>%
   select(person, measure, parameter, correlation) %>% 
   distinct() %>%
   arrange(person, measure, parameter) %>%
-  write_csv("old_model_cors.csv")
+  View()
 
 ```
 
