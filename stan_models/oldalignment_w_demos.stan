@@ -21,13 +21,9 @@ data {
 
   vector<lower=0>[NumObservations] ppvt_vals;
   vector<lower=0>[NumObservations] age_years;
-  vector<lower=0>[NumObservations] income_category;
+  // vector<lower=0>[NumObservations] income_category;
   vector<lower=0>[NumObservations] mother_education;
   vector<lower=0>[NumObservations] female;
-  vector<lower=0>[NumObservations] male;
-  vector<lower=0>[NumObservations] white;
-  vector<lower=0>[NumObservations] black;
-  vector<lower=0>[NumObservations] multi;
   
 }
 
@@ -56,33 +52,20 @@ parameters {
   real ppvt_intercept; //intercept term for ppvt linear regression
 
   // demographics coefficients for mu - change in baseline 
-  real mu_income; 
+  // real mu_income; 
   real mu_education; 
   real mu_female; 
-  real mu_male; 
-  real mu_white; 
-  real mu_black; 
-  real mu_multi; 
 
   // demographics coefficients for alignment effect
-  real mu_income_ab; 
+  // real mu_income_ab; 
   real mu_education_ab; 
   real mu_female_ab; 
-  real mu_male_ab; 
-  real mu_white_ab; 
-  real mu_black_ab; 
-  real mu_multi_ab; 
-
 
   // demographics coefficients for ppvt
   real ppvt_beta_age_years;
-  real ppvt_beta_income; 
+  // real ppvt_beta_income; 
   real ppvt_beta_education; 
   real ppvt_beta_female; 
-  real ppvt_beta_male; 
-  real ppvt_beta_white; 
-  real ppvt_beta_black; 
-  real ppvt_beta_multi; 
 
 }
 
@@ -94,30 +77,15 @@ transformed parameters {
     // include mother_ed, SES, sex in mean estimation as scalar values (simple linear predictors)
     mu_notab[Observation] = inv_logit(eta_observation[Observation]  +
                                     beta_speaker[SpeakerId[Observation]] * (SpeakerAge[Observation] - MidAge) +
-                                    (income_category[Observation] * mu_income) +
                                     (mother_education[Observation] * mu_education)+ 
-                                    (female[Observation] * mu_female) +
-                                    (male[Observation] * mu_male) +  
-                                    (white[Observation] * mu_white)+
-                                    (black[Observation] * mu_black)+
-                                    (multi[Observation] * mu_multi));
+                                    (female[Observation] * mu_female));
     mu_ab[Observation] = inv_logit(eta_ab_observation[Observation] + eta_observation[Observation] +
                                     ((alpha_speaker[SpeakerId[Observation]] + beta_speaker[SpeakerId[Observation]]) *
                                       (SpeakerAge[Observation] - MidAge)) +
-                                    (income_category[Observation] * mu_income) +
                                     (mother_education[Observation] * mu_education)+ 
                                     (female[Observation] * mu_female) +
-                                    (male[Observation] * mu_male) +  
-                                    (white[Observation] * mu_white)+
-                                    (black[Observation] * mu_black)+
-                                    (multi[Observation] * mu_multi) + 
-                                    (income_category[Observation] * mu_income_ab) +
                                     (mother_education[Observation] * mu_education_ab)+ 
-                                    (female[Observation] * mu_female_ab) +
-                                    (male[Observation] * mu_male_ab) +  
-                                    (white[Observation] * mu_white_ab)+
-                                    (black[Observation] * mu_black_ab)+
-                                    (multi[Observation] * mu_multi_ab));
+                                    (female[Observation] * mu_female_ab));
   }
 
 }
@@ -164,11 +132,6 @@ model {
 
   // drawing ppvt values from demographics & alignment estimates - effective linear regression
   ppvt_vals ~ normal(ppvt_intercept + (age_years * ppvt_beta_age_years) +
-    (income_category * ppvt_beta_income) +
     (mother_education * ppvt_beta_education)+ 
-    (female * ppvt_beta_female) + 
-    (male * ppvt_beta_male) + 
-    (white * ppvt_beta_white)+
-    (black * ppvt_beta_black)+
-    (multi * ppvt_beta_multi), sigma);
+    (female * ppvt_beta_female), sigma);
 }

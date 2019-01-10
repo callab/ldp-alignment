@@ -211,10 +211,11 @@ long_present_demos <- long_present %>%
          male = as.numeric(sex == 'M'),
          white = as.numeric(sex == 'WH'),
          black = as.numeric(sex == 'BL'),
-         multi = as.numeric(sex == '2+'))
+         multi = as.numeric(sex == '2+'),
+         income_category = income_category - 1)
 
 # treat mother_ed as ordinal variable
-conversion = c("Some High School"=1, "High School or GED"=2, "Some College or Trade School"=3, "Bachelor's Degree"=4, "Advanced Degree"=5)
+conversion = c("Some High School"=0, "High School or GED"=1, "Some College or Trade School"=2, "Bachelor's Degree"=3, "Advanced Degree"=4)
 long_present_demos$mother_education = conversion[long_present_demos$mother_education]
 
 liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
@@ -249,13 +250,11 @@ age_years <- long_present$age_years
 income_category <- long_present$income_category
 mother_education <- long_present$mother_education
 female <- long_present$female
-male <- long_present$male
-white <- long_present$white
 black <- long_present$black
 multi <- long_present$multi
 ###############
 
 fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
-                         chains = 1)
+                         chains = 1, iter = 200)
 ```
 
