@@ -256,7 +256,6 @@ multi <- long_present$multi
 ###############
 
 fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
-                         chains = 1,
-                         control = list(adapt_delta = 1))
+                         chains = 1)
 ```
 
