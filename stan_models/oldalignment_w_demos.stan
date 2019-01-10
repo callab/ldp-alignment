@@ -17,6 +17,18 @@ data {
   int<lower=0> CountsAB[NumObservations];               //Number of times the first message didn't contain the marker but the reply did
   int<lower=0> CountsNotAB[NumObservations];            //Number of times the first message did contain the marker and the reply did
   real<lower=0> StdDev;                                 //SD for each normal dist in the hierarchy (sole free parameter)
+
+
+  vector<lower=0>[NumObservations] ppvt_vals;
+  vector<lower=0>[NumObservations] age_years;
+  vector<lower=0>[NumObservations] income_category;
+  vector<lower=0>[NumObservations] mother_education;
+  vector<lower=0>[NumObservations] female;
+  vector<lower=0>[NumObservations] male;
+  vector<lower=0>[NumObservations] white;
+  vector<lower=0>[NumObservations] black;
+  vector<lower=0>[NumObservations] multi;
+  
 }
 
 parameters {
@@ -41,6 +53,26 @@ parameters {
   vector[NumObservations] eta_ab_observation;           //lin. pred. for each marker+dyad alignment
 
   real<lower=0> sigma; //error term for ppvt linear regression
+
+  // demographics coefficients for mu 
+  real mu_beta_income; 
+  real mu_beta_education; 
+  real mu_beta_female; 
+  real mu_beta_male; 
+  real mu_beta_white; 
+  real mu_beta_black; 
+  real mu_beta_multi; 
+
+  // demographics coefficients for ppvt
+  real ppvt_beta_age_years;
+  real ppvt_beta_income; 
+  real ppvt_beta_education; 
+  real ppvt_beta_female; 
+  real ppvt_beta_male; 
+  real ppvt_beta_white; 
+  real ppvt_beta_black; 
+  real ppvt_beta_multi; 
+
 }
 
 transformed parameters {
@@ -117,13 +149,12 @@ model {
 
 
   // drawing ppvt values from demographics & alignment estimates - effective linear regression
-  ppvt ~ normal((age_years[Observation] * ppvt_beta_age_years) +
-    (income_category[Observation] * ppvt_beta_income) +
-    (mother_education[Observation] * ppvt_beta_education)+ 
-    (female[Observation] * ppvt_beta_female) + 
-    (male[Observation] * ppvt_beta_male) + 
-    (white[Observation] * ppvt_beta_white)+
-    (black[Observation] * ppvt_beta_black)+
-    (multi[Observation] * ppvt_beta_multi)+
-    , sigma);
+  ppvt_vals ~ normal((age_years * ppvt_beta_age_years) +
+    (income_category * ppvt_beta_income) +
+    (mother_education * ppvt_beta_education)+ 
+    (female * ppvt_beta_female) + 
+    (male * ppvt_beta_male) + 
+    (white * ppvt_beta_white)+
+    (black * ppvt_beta_black)+
+    (multi * ppvt_beta_multi), sigma);
 }

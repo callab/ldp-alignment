@@ -20,6 +20,10 @@ library(feather)
 library(magrittr)
 library(zoo)
 library(RMySQL)
+library(rstan)
+
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
 ```
 
 ```{r Load Fit Stats}
@@ -175,5 +179,84 @@ old_stats %>%
   arrange(person, measure, parameter) %>%
   View()
 
+```
+
+
+```{r Old Fit with Demos and PPVT}
+
+raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
+
+long_present <- raw_long_present %>% 
+  arrange(subject, session, category, run) %>%
+  group_by(subject, session, category) %>%
+  mutate(lag_count = lag(count)) %>%
+  filter(!is.na(lag_count)) %>%
+  group_by(subject, session, person, category) %>%
+  mutate(BA = count > 0 & lag_count > 0,
+         notBA = count == 0 & lag_count > 0,
+         BnotA = count > 0 & lag_count == 0,
+         notBnotA = count == 0 & lag_count == 0) %>%
+  summarise_at(vars(BA,notBA,BnotA,notBnotA), sum) %>%
+  mutate(NumUtterancesAB = BA +notBA, 
+         NumUtterancesNotAB = BnotA + notBnotA) %>%
+  rename(CountsAB = BA, CountsNotAB = BnotA) %>%
+    select(-notBA, - notBnotA)
+
+# Join demographic info and ppvt onto utterance data; convert categorical info to binary
+long_present_demos <- long_present %>% 
+  left_join(subjs, by = 'subject') %>% 
+  left_join(ppvt, by= 'subject') %>% 
+  na.omit() %>% 
+  mutate(female = as.numeric(sex == 'F'),
+         male = as.numeric(sex == 'M'),
+         white = as.numeric(sex == 'WH'),
+         black = as.numeric(sex == 'BL'),
+         multi = as.numeric(sex == '2+'))
+
+# treat mother_ed as ordinal variable
+conversion = c("Some High School"=1, "High School or GED"=2, "Some College or Trade School"=3, "Bachelor's Degree"=4, "Advanced Degree"=5)
+long_present_demos$mother_education = conversion[long_present_demos$mother_education]
+
+liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
+  rename(word = X1, category = X2)
+
+long_present <- long_present_demos %>%
+  ungroup() %>%
+  mutate(uid = paste0(subject, "_", person)) %>%
+  mutate(uid = as.numeric(as.factor(uid)))
+
+## STAN DATA ##
+MidAge <- median(long_present$session)
+NumMarkers <- length(unique(liwc$category))
+NumSubPops <- length(unique(long_present$person))
+NumSpeakers <- length(unique(long_present$uid))
+NumObservations <- dim(long_present)[1]
+SpeakerSubPop <- long_present %>% 
+  distinct(person, uid) %>%
+  mutate(subpop =  as.numeric(as.factor(person))) %>%
+  pull(subpop) # Child - 1; Parent - 2
+SpeakerId <-long_present$uid
+SpeakerAge <- long_present$session
+MarkerType <- as.numeric(as.factor(long_present$category)) #see liwc_markers
+NumUtterancesAB <- long_present$NumUtterancesAB
+NumUtterancesNotAB <- long_present$NumUtterancesNotAB
+CountsAB <- long_present$CountsAB
+CountsNotAB <- long_present$CountsNotAB
+StdDev <- 1
+
+ppvt_vals <- long_present$ppvt
+age_years <- long_present$age_years
+income_category <- long_present$income_category
+mother_education <- long_present$mother_education
+female <- long_present$female
+male <- long_present$male
+white <- long_present$white
+black <- long_present$black
+multi <- long_present$multi
+###############
+
+fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
+                         chains = 1,
+                         control = list(adapt_delta = 1))
 ```
 
