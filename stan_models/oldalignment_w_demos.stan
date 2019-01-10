@@ -53,15 +53,26 @@ parameters {
   vector[NumObservations] eta_ab_observation;           //lin. pred. for each marker+dyad alignment
 
   real<lower=0> sigma; //error term for ppvt linear regression
+  real ppvt_intercept; //intercept term for ppvt linear regression
 
-  // demographics coefficients for mu 
-  real mu_beta_income; 
-  real mu_beta_education; 
-  real mu_beta_female; 
-  real mu_beta_male; 
-  real mu_beta_white; 
-  real mu_beta_black; 
-  real mu_beta_multi; 
+  // demographics coefficients for mu - change in baseline 
+  real mu_income; 
+  real mu_education; 
+  real mu_female; 
+  real mu_male; 
+  real mu_white; 
+  real mu_black; 
+  real mu_multi; 
+
+  // demographics coefficients for alignment effect
+  real mu_income_ab; 
+  real mu_education_ab; 
+  real mu_female_ab; 
+  real mu_male_ab; 
+  real mu_white_ab; 
+  real mu_black_ab; 
+  real mu_multi_ab; 
+
 
   // demographics coefficients for ppvt
   real ppvt_beta_age_years;
@@ -83,32 +94,35 @@ transformed parameters {
     // include mother_ed, SES, sex in mean estimation as scalar values (simple linear predictors)
     mu_notab[Observation] = inv_logit(eta_observation[Observation]  +
                                     beta_speaker[SpeakerId[Observation]] * (SpeakerAge[Observation] - MidAge) +
-                                    (income_category[Observation] * mu_beta_income) +
-                                    (mother_education[Observation] * mu_beta_education)+ 
-                                    (female[Observation] * mu_beta_female) +
-                                    (male[Observation] * mu_beta_male) +  
-                                    (white[Observation] * mu_beta_white)+
-                                    (black[Observation] * mu_beta_black)+
-                                    (multi[Observation] * mu_beta_multi));
+                                    (income_category[Observation] * mu_income) +
+                                    (mother_education[Observation] * mu_education)+ 
+                                    (female[Observation] * mu_female) +
+                                    (male[Observation] * mu_male) +  
+                                    (white[Observation] * mu_white)+
+                                    (black[Observation] * mu_black)+
+                                    (multi[Observation] * mu_multi));
     mu_ab[Observation] = inv_logit(eta_ab_observation[Observation] + eta_observation[Observation] +
                                     ((alpha_speaker[SpeakerId[Observation]] + beta_speaker[SpeakerId[Observation]]) *
                                       (SpeakerAge[Observation] - MidAge)) +
-                                    (income_category[Observation] * mu_beta_income) +
-                                    (mother_education[Observation] * mu_beta_education)+ 
-                                    (female[Observation] * mu_beta_female) +
-                                    (male[Observation] * mu_beta_male) +  
-                                    (white[Observation] * mu_beta_white)+
-                                    (black[Observation] * mu_beta_black)+
-                                    (multi[Observation] * mu_beta_multi));
+                                    (income_category[Observation] * mu_income) +
+                                    (mother_education[Observation] * mu_education)+ 
+                                    (female[Observation] * mu_female) +
+                                    (male[Observation] * mu_male) +  
+                                    (white[Observation] * mu_white)+
+                                    (black[Observation] * mu_black)+
+                                    (multi[Observation] * mu_multi) + 
+                                    (income_category[Observation] * mu_income_ab) +
+                                    (mother_education[Observation] * mu_education_ab)+ 
+                                    (female[Observation] * mu_female_ab) +
+                                    (male[Observation] * mu_male_ab) +  
+                                    (white[Observation] * mu_white_ab)+
+                                    (black[Observation] * mu_black_ab)+
+                                    (multi[Observation] * mu_multi_ab));
   }
 
 }
 
 model {
-
-
-  // include 3 ppvt score prediction
-  // include stan bayesian linear regression for this
 
   //top level alignment
   eta_ab_pop ~ normal(0, StdDev);
@@ -149,7 +163,7 @@ model {
 
 
   // drawing ppvt values from demographics & alignment estimates - effective linear regression
-  ppvt_vals ~ normal((age_years * ppvt_beta_age_years) +
+  ppvt_vals ~ normal(ppvt_intercept + (age_years * ppvt_beta_age_years) +
     (income_category * ppvt_beta_income) +
     (mother_education * ppvt_beta_education)+ 
     (female * ppvt_beta_female) + 
