@@ -256,5 +256,99 @@ multi <- long_present$multi
 
 fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
                          chains = 1, iter = 200)
+
+saveRDS(fit_hierarchical, 'stanfits/oldmodeldemos_short.rds')
+```
+
+```{r fit extraction}
+fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
+
+demopars <- names(fit_hierarchical) %>%
+  as_data_frame() %>%
+  filter(str_detect(value, "mu") | str_detect(value, 'ppvt') | str_detect(value, 'sigma'),
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab")) %>%
+  pull()
+
+demoparameters <- extract(fit_hierarchical, demopars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER))
+  
+
+pars <- names(fit_hierarchical) %>%
+  as_data_frame() %>%
+  filter(!str_detect(value, "Marker"), 
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab"),
+          !str_detect(value, "lp__")) %>%
+  pull()
+
+SE_UPPER <- .84
+SE_LOWER <- .16
+
+parameter_cis <- extract(fit_hierarchical, pars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER)) %>%
+  ungroup() %>% 
+  mutate(measure = gsub("eta_ab","eta-ab", measure)) %>%
+  separate(measure, into = c("parameter", "type") , sep = "_", 
+           extra = "merge") %>%
+  mutate(id = gsub("[^0-9]*","", str_extract(type, "\\[[^()]+\\]")),
+         type = gsub("\\[[^()]+\\]", "", type),
+         type = factor(type, levels = c("pop", "subpop", "speaker")),
+         id = case_when(
+           is.na(id) ~ "pop",
+           type == "subpop" & id == 1 ~ "child",
+           type == "subpop" & id == 2 ~ "parent",
+           T ~ id)
+         ) %>%
+  left_join(distinct(long_present, subject, uid, person) %>% 
+              mutate(uid = as.character(uid)), by = c("id" = "uid")) %>%
+  arrange(type, parameter) %>%
+  mutate(id = if_else(is.na(subject), id, as.character(subject))) %>%
+  select(-subject)
+
+avg_subj_measure <- measures %>% 
+  group_by(subject, measure) %>% 
+  summarise(value= mean(value)) 
+
+old_stats <- old_model_stats %>%
+  filter(type == "speaker") %>%
+  mutate(id = as.numeric(id)) %>%
+  left_join(avg_subj_measure, fit_stats, by = c("id" = "subject")) %>%
+  filter(!is.na(value))
+
+new_old_stats <- parameter_cis %>%
+  filter(type == "speaker") %>%
+  mutate(id = as.numeric(id)) %>%
+  left_join(avg_subj_measure, fit_stats, by = c("id" = "subject")) %>%
+  filter(!is.na(value))
+  
+old_cors <- old_stats %>% 
+  group_by(person, parameter, measure) %>% 
+  mutate(correlation = cor(value, mean)) %>% 
+  select(person, measure, parameter, correlation) %>% 
+  distinct() %>%
+  arrange(person, measure, parameter) 
+
+new_old_cors <- new_old_stats %>% 
+  group_by(person, parameter, measure) %>% 
+  mutate(correlation = cor(value, mean)) %>% 
+  select(person, measure, parameter, correlation) %>% 
+  distinct() %>%
+  arrange(person, measure, parameter) 
+
+together_cors <- old_cors %>% 
+  left_join(new_old_cors, by = c('person', 'measure', 'parameter'), suffix = c(".nodemos",".demos"))
+
+write_csv(together_cors, 'together_cors.csv')
 ```
 

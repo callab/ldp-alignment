@@ -62,10 +62,10 @@ parameters {
   real mu_female_ab; 
 
   // demographics coefficients for ppvt
-  real ppvt_beta_age_years;
+  real ppvt_age_years;
   // real ppvt_beta_income; 
-  real ppvt_beta_education; 
-  real ppvt_beta_female; 
+  real ppvt_education; 
+  real ppvt_female; 
 
 }
 
@@ -131,7 +131,7 @@ model {
 
 
   // drawing ppvt values from demographics & alignment estimates - effective linear regression
-  ppvt_vals ~ normal(ppvt_intercept + (age_years * ppvt_beta_age_years) +
-    (mother_education * ppvt_beta_education)+ 
-    (female * ppvt_beta_female), sigma);
+  ppvt_vals ~ normal(ppvt_intercept + (age_years * ppvt_age_years) +
+    (mother_education * ppvt_education)+ 
+    (female * ppvt_female), sigma);
 }
