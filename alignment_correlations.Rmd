@@ -261,7 +261,34 @@ saveRDS(fit_hierarchical, 'stanfits/oldmodeldemos_short.rds')
 ```
 
 ```{r fit extraction}
+raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
+
+long_present <- raw_long_present %>% 
+  arrange(subject, session, category, run) %>%
+  group_by(subject, session, category) %>%
+  mutate(lag_count = lag(count)) %>%
+  filter(!is.na(lag_count)) %>%
+  group_by(subject, session, person, category) %>%
+  mutate(BA = count > 0 & lag_count > 0,
+         notBA = count == 0 & lag_count > 0,
+         BnotA = count > 0 & lag_count == 0,
+         notBnotA = count == 0 & lag_count == 0) %>%
+  summarise_at(vars(BA,notBA,BnotA,notBnotA), sum) %>%
+  mutate(NumUtterancesAB = BA +notBA, 
+         NumUtterancesNotAB = BnotA + notBnotA) %>%
+  rename(CountsAB = BA, CountsNotAB = BnotA) %>%
+    select(-notBA, - notBnotA)
+
+long_present <- long_present %>%
+  ungroup() %>%
+  mutate(uid = paste0(subject, "_", person)) %>%
+  mutate(uid = as.numeric(as.factor(uid)))
+
 fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
+
+SE_UPPER <- .84
+SE_LOWER <- .16
+
 
 demopars <- names(fit_hierarchical) %>%
   as_data_frame() %>%
@@ -288,8 +315,6 @@ pars <- names(fit_hierarchical) %>%
           !str_detect(value, "lp__")) %>%
   pull()
 
-SE_UPPER <- .84
-SE_LOWER <- .16
 
 parameter_cis <- extract(fit_hierarchical, pars) %>%
   bind_rows(.id = "sample") %>%
