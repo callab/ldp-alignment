@@ -224,7 +224,21 @@ liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
 long_present <- long_present_demos %>%
   ungroup() %>%
   mutate(uid = paste0(subject, "_", person)) %>%
-  mutate(uid = as.numeric(as.factor(uid)))
+  mutate(uid = as.numeric(as.factor(uid))) %>% 
+  mutate(parentid = case_when(person == 'Parent' ~ uid,
+                              TRUE ~ uid + 1),
+         childid = case_when(person == 'Child' ~ uid,
+                             TRUE ~ uid - 1))
+
+ppvt_slope_by_subject <- long_present %>% 
+  group_by(subject) %>% 
+  select(subject, ppvt, age_years) %>% 
+  distinct() %>% 
+  do(model = lm(ppvt~age_years, .)$coefficients[2][[1]]) %>% 
+  mutate(model = replace_na(model,0))
+
+long_present <- long_present %>% 
+  left_join(ppvt_slope_by_subject, by = 'subject') 
 
 ## STAN DATA ##
 MidAge <- median(long_present$session)
@@ -252,7 +266,12 @@ mother_education <- long_present$mother_education
 female <- long_present$female
 black <- long_present$black
 multi <- long_present$multi
+ppvt_slopes <- long_present$model
 ###############
+
+fit <- stan("stan_models/alignmenthierarchicaldemos.stan",
+            chains = 1,
+            iter = 50)
 
 fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
                          chains = 1, iter = 200)
@@ -283,6 +302,8 @@ long_present <- long_present %>%
   ungroup() %>%
   mutate(uid = paste0(subject, "_", person)) %>%
   mutate(uid = as.numeric(as.factor(uid)))
+
+
 
 fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
 
