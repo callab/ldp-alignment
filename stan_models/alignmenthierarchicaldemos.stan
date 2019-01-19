@@ -54,9 +54,6 @@ parameters {
   real<lower=0> sigma; //error term for ppvt linear regression
   real ppvt_intercept; //intercept term for ppvt linear regression
 
-  real<lower=0> sigma_slope; //error term for ppvt_slope linear regression
-  real ppvt_slope_intercept; //intercept term for ppvt_slope linear regression
-
   // demographics coefficients for mu - change in baseline 
   // real mu_income; 
   real mu_education; 
@@ -74,14 +71,13 @@ parameters {
   real ppvt_female; 
   real ppvt_child_align;
   real ppvt_parent_align;
+  real ppvt_child_align_slope;
+  real ppvt_parent_align_slope;
+  real ppvt_mother_ed_slope;
+  real ppvt_female_slope;
 
-  // demographics coefficients for ppvt slope
-  real ppvt_slope_age_years;
-  // real ppvt_beta_income; 
-  real ppvt_slope_education; 
-  real ppvt_slope_female; 
-  real ppvt_slope_child_align;
-  real ppvt_slope_parent_align;
+
+  
 }
 
 transformed parameters {
@@ -143,23 +139,18 @@ model {
   CountsNotAB ~ binomial(NumUtterancesNotAB, mu_notab);
 
   // predict ppvt and slope using demos AND parent and child alignment estimate
-
-  for(Observation in 1:NumObservations) {
-    ppvt_vals[Observation] ~ normal(ppvt_intercept + (age_years[Observation] * ppvt_age_years) +
+  for (Observation in 1:NumObservations){
+    ppvt_vals[Observation] ~ normal(ppvt_intercept + 
+      (age_years[Observation] * ppvt_slopes[Observation]) + 
       (mother_education[Observation] * ppvt_education)+ 
       (female[Observation] * ppvt_female) +
       (eta_ab_speaker[childid[Observation]] * ppvt_child_align) + 
-      (eta_ab_speaker[parentid[Observation]] * ppvt_parent_align), sigma);
-
-  }
-  
-  for(Observation in 1:NumObservations){
-    ppvt_slopes[Observation] ~ normal(ppvt_slope_intercept + (age_years[Observation] * ppvt_slope_age_years) +
-      (mother_education[Observation] * ppvt_slope_education)+ 
-      (female[Observation] * ppvt_slope_female) +
-      (eta_ab_speaker[childid[Observation]] * ppvt_slope_child_align) + 
-      (eta_ab_speaker[parentid[Observation]] * ppvt_slope_parent_align), sigma_slope);
-
+      (eta_ab_speaker[parentid[Observation]] * ppvt_parent_align) + 
+      (eta_ab_speaker[childid[Observation]] * age_years[Observation] * ppvt_parent_align_slope) + 
+      (eta_ab_speaker[parentid[Observation]] * age_years[Observation] * ppvt_child_align_slope) +
+      (mother_education[Observation] * age_years[Observation] * ppvt_mother_ed_slope)+
+      (female[Observation] * age_years[Observation] * ppvt_female_slope)
+      , sigma)
   }
   
 }

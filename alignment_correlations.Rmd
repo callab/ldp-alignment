@@ -32,7 +32,7 @@ old_model_stats <- read_feather("stanfits/oldmodel_cis.feather")
 ```
 
 ```{r ldp_functions}
-source(here("read_ldp.R"))
+source("read_ldp.R")
 ```
 
 ```{r, eval=T, message=FALSE}
@@ -240,6 +240,8 @@ ppvt_slope_by_subject <- long_present %>%
 long_present <- long_present %>% 
   left_join(ppvt_slope_by_subject, by = 'subject') 
 
+write_feather(long_present, 'ppvt_with_demos.feather')
+
 ## STAN DATA ##
 MidAge <- median(long_present$session)
 NumMarkers <- length(unique(liwc$category))
@@ -267,11 +269,13 @@ female <- long_present$female
 black <- long_present$black
 multi <- long_present$multi
 ppvt_slopes <- long_present$model
+parentid <- long_present$parentid
+childid <- long_present$childid
 ###############
 
 fit <- stan("stan_models/alignmenthierarchicaldemos.stan",
             chains = 1,
-            iter = 50)
+            iter = 200)
 
 fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
                          chains = 1, iter = 200)
