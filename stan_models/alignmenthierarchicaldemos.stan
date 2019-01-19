@@ -150,7 +150,7 @@ model {
       (eta_ab_speaker[parentid[Observation]] * age_years[Observation] * ppvt_child_align_slope) +
       (mother_education[Observation] * age_years[Observation] * ppvt_mother_ed_slope)+
       (female[Observation] * age_years[Observation] * ppvt_female_slope)
-      , sigma)
+      , sigma);
   }
   
 }
