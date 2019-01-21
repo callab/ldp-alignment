@@ -20,7 +20,7 @@ data {
 
 
   real<lower=0>ppvt_vals[NumObservations];
-  real ppvt_slopes[NumObservations];
+  // real ppvt_slopes[NumObservations];
   real<lower=0> age_years[NumObservations];
   // vector<lower=0>[NumObservations] income_category;
   int<lower=0> mother_education[NumObservations];
@@ -54,15 +54,15 @@ parameters {
   real<lower=0> sigma; //error term for ppvt linear regression
   real ppvt_intercept; //intercept term for ppvt linear regression
 
-  // demographics coefficients for mu - change in baseline 
+  // demographics coefficients for mu - change in baseline; estimated for each subpop
   // real mu_income; 
-  real mu_education; 
-  real mu_female; 
+  real mu_education[NumSubPops]; //
+  real mu_female[NumSubPops]; // 
 
-  // demographics coefficients for alignment effect
+  // demographics coefficients for alignment effect; estimated for each subpop
   // real mu_income_ab; 
-  real mu_education_ab; 
-  real mu_female_ab; 
+  real mu_education_ab[NumSubPops]; 
+  real mu_female_ab[NumSubPops]; 
 
   // demographics coefficients for ppvt
   real ppvt_age_years;
@@ -88,13 +88,13 @@ transformed parameters {
     mu_notab[Observation] = inv_logit(eta_observation[Observation]  +
                                     beta_speaker[SpeakerId[Observation]] * (SpeakerAge[Observation] - MidAge) +
                                     (mother_education[Observation] * mu_education)+ 
-                                    (female[Observation] * mu_female));
+                                    (female[Observation] * mu_female[SpeakerSubPop[SpeakerId[Observation]]]));
     mu_ab[Observation] = inv_logit(eta_ab_observation[Observation] + eta_observation[Observation] +
                                     ((alpha_speaker[SpeakerId[Observation]] + beta_speaker[SpeakerId[Observation]]) *
                                       (SpeakerAge[Observation] - MidAge)) +
-                                    (mother_education[Observation] * mu_education)+ 
-                                    (female[Observation] * mu_female) +
-                                    (mother_education[Observation] * mu_education_ab)+ 
+                                    (mother_education[Observation] * mu_education[SpeakerSubPop[SpeakerId[Observation]]])+ 
+                                    (female[Observation] * mu_female[SpeakerSubPop[SpeakerId[Observation]]]) +
+                                    (mother_education[Observation] * mu_education_ab[SpeakerSubPop[SpeakerId[Observation]]])+ 
                                     (female[Observation] * mu_female_ab));
   }
 
@@ -141,13 +141,13 @@ model {
   // predict ppvt and slope using demos AND parent and child alignment estimate
   for (Observation in 1:NumObservations){
     ppvt_vals[Observation] ~ normal(ppvt_intercept + 
-      (age_years[Observation] * ppvt_slopes[Observation]) + 
+      (age_years[Observation] * ppvt_age_years) + 
       (mother_education[Observation] * ppvt_education)+ 
       (female[Observation] * ppvt_female) +
       (eta_ab_speaker[childid[Observation]] * ppvt_child_align) + 
       (eta_ab_speaker[parentid[Observation]] * ppvt_parent_align) + 
-      (eta_ab_speaker[childid[Observation]] * age_years[Observation] * ppvt_parent_align_slope) + 
-      (eta_ab_speaker[parentid[Observation]] * age_years[Observation] * ppvt_child_align_slope) +
+      (eta_ab_speaker[childid[Observation]] * age_years[Observation] * ppvt_child_align_slope) + 
+      (eta_ab_speaker[parentid[Observation]] * age_years[Observation] * ppvt_parent_align_slope) +
       (mother_education[Observation] * age_years[Observation] * ppvt_mother_ed_slope)+
       (female[Observation] * age_years[Observation] * ppvt_female_slope)
       , sigma);
