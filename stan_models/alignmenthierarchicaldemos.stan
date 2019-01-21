@@ -87,7 +87,7 @@ transformed parameters {
   for (Observation in 1:NumObservations) {
     mu_notab[Observation] = inv_logit(eta_observation[Observation]  +
                                     beta_speaker[SpeakerId[Observation]] * (SpeakerAge[Observation] - MidAge) +
-                                    (mother_education[Observation] * mu_education)+ 
+                                    (mother_education[Observation] * mu_education[SpeakerSubPop[SpeakerId[Observation]]])+ 
                                     (female[Observation] * mu_female[SpeakerSubPop[SpeakerId[Observation]]]));
     mu_ab[Observation] = inv_logit(eta_ab_observation[Observation] + eta_observation[Observation] +
                                     ((alpha_speaker[SpeakerId[Observation]] + beta_speaker[SpeakerId[Observation]]) *
@@ -95,7 +95,7 @@ transformed parameters {
                                     (mother_education[Observation] * mu_education[SpeakerSubPop[SpeakerId[Observation]]])+ 
                                     (female[Observation] * mu_female[SpeakerSubPop[SpeakerId[Observation]]]) +
                                     (mother_education[Observation] * mu_education_ab[SpeakerSubPop[SpeakerId[Observation]]])+ 
-                                    (female[Observation] * mu_female_ab));
+                                    (female[Observation] * mu_female_ab[SpeakerSubPop[SpeakerId[Observation]]]));
   }
 
 }
