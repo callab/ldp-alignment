@@ -8,7 +8,11 @@ data {
   int<lower=0> NumSubPops;                              //Number of groups in the data
   int<lower=0> NumSpeakers;                             //Identity of each speaker
   int<lower=0> NumObservations;                         //Number of marker-dyad observations
+  int<lower=0> NumSex; 
+  int<lower=0> NumMomEd; 
   int<lower=0> SpeakerSubPop[NumSpeakers];          //Group number for each observation
+  int<lower=0> SpeakerSex[NumSpeakers];
+  int<lower=0> SpeakerMomEd[NumSpeakers];
   int<lower=0> SpeakerAge[NumObservations];          //Group number for each observation
   int<lower=0> MarkerType[NumObservations];             //Marker number for each observation
   int<lower=0> SpeakerId[NumObservations];
@@ -31,9 +35,9 @@ data {
 }
 
 parameters {
-  real eta_ab_pop;
-  real alpha_pop;
-  real beta_pop;
+  // real eta_ab_pop;
+  // real alpha_pop;
+  // real beta_pop;
   real eta_pop_Marker[NumMarkers]; //linear predictor for each marker's baseline
 
   real eta_ab_subpop[NumSubPops]; // aggregate estimates for parents and children
@@ -43,6 +47,9 @@ parameters {
   real eta_ab_speaker[NumSpeakers]; // estimates for each speaker
   real alpha_speaker[NumSpeakers];
   real beta_speaker[NumSpeakers];
+
+  real gender_ab[NumSex];
+  real mom_ed_ab[NumMomEd];
 
   vector[NumMarkers] eta_subpop_Marker[NumSubPops];            //lin. pred. for each marker+group baseline
   vector[NumMarkers] eta_speaker_Marker[NumSpeakers];            //lin. pred. for each marker+group baseline
@@ -102,13 +109,16 @@ transformed parameters {
 
 model {
   //top level alignment
-  eta_ab_pop ~ normal(0, StdDev);
-  alpha_pop ~ normal(0, StdDev);
-  beta_pop ~ normal(0, StdDev);
+  // eta_ab_pop ~ normal(0, StdDev);
+  // alpha_pop ~ normal(0, StdDev);
+  // beta_pop ~ normal(0, StdDev);
 
   eta_pop_Marker ~ uniform(-5,5);   //Note that this distribution may be changed if baselines are expected to be very high/low
 
-  eta_ab_subpop ~ normal(eta_ab_pop, StdDev);
+  eta_ab_subpop ~ normal(0, StdDev);
+
+  gender_ab ~ normal(0,StdDev);
+  mom_ed_ab ~ normal(0,StdDev);
 
   //marker-group level distributions
   for(SubPop in 1:NumSubPops) {
@@ -119,7 +129,9 @@ model {
 
   //marker-speaker level distributions
   for(Speaker in 1:NumSpeakers) {
-    eta_ab_speaker[Speaker] ~ normal(eta_ab_subpop[SpeakerSubPop[Speaker]], StdDev);
+    eta_ab_speaker[Speaker] ~ normal((eta_ab_subpop[SpeakerSubPop[Speaker]] + 
+      gender_ab[SpeakerSex[Speaker]]+
+      mom_ed_ab[SpeakerMomEd[Speaker]]), StdDev);
 
     eta_speaker_Marker[Speaker] ~ normal(eta_subpop_Marker[SpeakerSubPop[Speaker]], StdDev);
     eta_ab_speaker_Marker[Speaker] ~ normal(eta_ab_speaker[Speaker], StdDev);

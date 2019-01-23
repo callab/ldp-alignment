@@ -248,10 +248,20 @@ NumMarkers <- length(unique(liwc$category))
 NumSubPops <- length(unique(long_present$person))
 NumSpeakers <- length(unique(long_present$uid))
 NumObservations <- dim(long_present)[1]
+NumSex <- length(unique(long_present$sex))
+NumMomEd <- length(unique(long_present$mother_education))
 SpeakerSubPop <- long_present %>% 
   distinct(person, uid) %>%
   mutate(subpop =  as.numeric(as.factor(person))) %>%
   pull(subpop) # Child - 1; Parent - 2
+SpeakerMomEd <- long_present %>% 
+  mutate(mother_education = mother_education + 1) %>% 
+  distinct(uid, mother_education) %>%
+  pull(mother_education)
+SpeakerSex <- long_present %>% 
+  distinct(uid, sex) %>%
+  mutate(sex =  as.numeric(as.factor(sex))) %>%
+  pull(sex) # Female - 1; Male - 2
 SpeakerId <-long_present$uid
 SpeakerAge <- long_present$session
 MarkerType <- as.numeric(as.factor(long_present$category)) #see liwc_markers
@@ -275,7 +285,8 @@ childid <- long_present$childid
 
 fit <- stan("stan_models/alignmenthierarchicaldemos.stan",
             chains = 1,
-            iter = 200)
+            iter = 50)
+
 
 fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
                          chains = 1, iter = 200)
@@ -310,6 +321,7 @@ long_present <- long_present %>%
 
 
 fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
+fit_hierarchical <- readRDS('newhierdemos200iters.rds')
 
 SE_UPPER <- .84
 SE_LOWER <- .16
@@ -340,6 +352,17 @@ pars <- names(fit_hierarchical) %>%
           !str_detect(value, "lp__")) %>%
   pull()
 
+demo_abs <- names(fit_hierarchical) %>% 
+  as_data_frame() %>% 
+  filter(str_detect(value, "mom_ed") | str_detect(value, "gender_ab")) %>% 
+  pull()
+
+demo_ab_parameters <- extract(fit_hierarchical, demo_abs) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER))
 
 parameter_cis <- extract(fit_hierarchical, pars) %>%
   bind_rows(.id = "sample") %>%
@@ -365,6 +388,9 @@ parameter_cis <- extract(fit_hierarchical, pars) %>%
   arrange(type, parameter) %>%
   mutate(id = if_else(is.na(subject), id, as.character(subject))) %>%
   select(-subject)
+
+parameter_cis %>% 
+  filter(parameter == 'mom_ed')
 
 avg_subj_measure <- measures %>% 
   group_by(subject, measure) %>% 
