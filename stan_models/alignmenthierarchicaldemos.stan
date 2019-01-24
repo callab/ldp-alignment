@@ -48,8 +48,14 @@ parameters {
   real alpha_speaker[NumSpeakers];
   real beta_speaker[NumSpeakers];
 
-  real gender_ab[NumSex];
-  real mom_ed_ab[NumMomEd];
+  real gender_ab[NumSubPops];
+  real mom_ed_ab[NumSubPops];
+
+  real gender_alpha[NumSubPops];
+  real mom_ed_alpha[NumSubPops];
+
+  real gender_beta[NumSubPops];
+  real mom_ed_beta[NumSubPops];
 
   vector[NumMarkers] eta_subpop_Marker[NumSubPops];            //lin. pred. for each marker+group baseline
   vector[NumMarkers] eta_speaker_Marker[NumSpeakers];            //lin. pred. for each marker+group baseline
@@ -63,13 +69,13 @@ parameters {
 
   // demographics coefficients for mu - change in baseline; estimated for each subpop
   // real mu_income; 
-  real mu_education[NumSubPops]; //
-  real mu_female[NumSubPops]; // 
+  // real mu_education[NumSubPops]; //
+  // real mu_female[NumSubPops]; // 
 
   // demographics coefficients for alignment effect; estimated for each subpop
   // real mu_income_ab; 
-  real mu_education_ab[NumSubPops]; 
-  real mu_female_ab[NumSubPops]; 
+  // real mu_education_ab[NumSubPops]; 
+  // real mu_female_ab[NumSubPops]; 
 
   // demographics coefficients for ppvt
   real ppvt_age_years;
@@ -93,16 +99,11 @@ transformed parameters {
 
   for (Observation in 1:NumObservations) {
     mu_notab[Observation] = inv_logit(eta_observation[Observation]  +
-                                    beta_speaker[SpeakerId[Observation]] * (SpeakerAge[Observation] - MidAge) +
-                                    (mother_education[Observation] * mu_education[SpeakerSubPop[SpeakerId[Observation]]])+ 
-                                    (female[Observation] * mu_female[SpeakerSubPop[SpeakerId[Observation]]]));
+                                    beta_speaker[SpeakerId[Observation]] * (SpeakerAge[Observation] - MidAge));
+
     mu_ab[Observation] = inv_logit(eta_ab_observation[Observation] + eta_observation[Observation] +
                                     ((alpha_speaker[SpeakerId[Observation]] + beta_speaker[SpeakerId[Observation]]) *
-                                      (SpeakerAge[Observation] - MidAge)) +
-                                    (mother_education[Observation] * mu_education[SpeakerSubPop[SpeakerId[Observation]]])+ 
-                                    (female[Observation] * mu_female[SpeakerSubPop[SpeakerId[Observation]]]) +
-                                    (mother_education[Observation] * mu_education_ab[SpeakerSubPop[SpeakerId[Observation]]])+ 
-                                    (female[Observation] * mu_female_ab[SpeakerSubPop[SpeakerId[Observation]]]));
+                                      (SpeakerAge[Observation] - MidAge)));
   }
 
 }
@@ -120,24 +121,37 @@ model {
   gender_ab ~ normal(0,StdDev);
   mom_ed_ab ~ normal(0,StdDev);
 
+  gender_alpha ~ normal(0,StdDev);
+  mom_ed_alpha ~ normal(0, StdDev);
+
+  gender_beta ~ normal(0, StdDev);
+  mom_ed_beta ~ normal(0, StdDev); 
+
   //marker-group level distributions
   for(SubPop in 1:NumSubPops) {
     eta_subpop_Marker[SubPop] ~ normal(eta_pop_Marker, StdDev);
-    alpha_subpop[SubPop] ~ normal(alpha_pop, StdDev);
-    beta_subpop[SubPop] ~ normal(beta_pop, StdDev);
+    alpha_subpop[SubPop] ~ normal(0, StdDev);
+    beta_subpop[SubPop] ~ normal(0, StdDev);
+    // alpha_subpop[SubPop] ~ normal(alpha_pop, StdDev);
+    // beta_subpop[SubPop] ~ normal(beta_pop, StdDev);
   }
 
   //marker-speaker level distributions
   for(Speaker in 1:NumSpeakers) {
     eta_ab_speaker[Speaker] ~ normal((eta_ab_subpop[SpeakerSubPop[Speaker]] + 
-      gender_ab[SpeakerSex[Speaker]]+
-      mom_ed_ab[SpeakerMomEd[Speaker]]), StdDev);
+      gender_ab[SpeakerSubPop[Speaker]] * SpeakerSex[Speaker]+
+      mom_ed_ab[SpeakerSubPop[Speaker]] * SpeakerMomEd[Speaker]), StdDev);
 
     eta_speaker_Marker[Speaker] ~ normal(eta_subpop_Marker[SpeakerSubPop[Speaker]], StdDev);
     eta_ab_speaker_Marker[Speaker] ~ normal(eta_ab_speaker[Speaker], StdDev);
 
-    alpha_speaker[Speaker] ~ normal(alpha_subpop[SpeakerSubPop[Speaker]], StdDev);
-    beta_speaker[Speaker] ~ normal(beta_subpop[SpeakerSubPop[Speaker]], StdDev);
+    alpha_speaker[Speaker] ~ normal(alpha_subpop[SpeakerSubPop[Speaker]]+
+      gender_alpha[SpeakerSubPop[Speaker]] * SpeakerSex[Speaker]+
+      mom_ed_alpha[SpeakerSubPop[Speaker]] * SpeakerMomEd[Speaker], StdDev);
+    
+    beta_speaker[Speaker] ~ normal(beta_subpop[SpeakerSubPop[Speaker]]+
+      gender_beta[SpeakerSubPop[Speaker]] * SpeakerSex[Speaker]+
+      mom_ed_beta[SpeakerSubPop[Speaker]] * SpeakerMomEd[Speaker], StdDev);
   }
 
   //marker-dyad level distributions
