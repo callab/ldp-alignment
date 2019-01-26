@@ -214,6 +214,13 @@ long_present_demos <- long_present %>%
          multi = as.numeric(sex == '2+'),
          income_category = income_category - 1)
 
+long_present_demos %>% 
+  ungroup() %>% 
+  select(subject, mother_education) %>%
+  distinct() %>% 
+  group_by(mother_education) %>% 
+  summarise(n=n())
+
 # treat mother_ed as ordinal variable
 conversion = c("Some High School"=0, "High School or GED"=1, "Some College or Trade School"=2, "Bachelor's Degree"=3, "Advanced Degree"=4)
 long_present_demos$mother_education = conversion[long_present_demos$mother_education]
@@ -254,13 +261,14 @@ SpeakerSubPop <- long_present %>%
   distinct(person, uid) %>%
   mutate(subpop =  as.numeric(as.factor(person))) %>%
   pull(subpop) # Child - 1; Parent - 2
+# Make these two zero-indexed? for lin regression purposes
 SpeakerMomEd <- long_present %>% 
-  mutate(mother_education = mother_education + 1) %>% 
+  mutate(mother_education = mother_education) %>% 
   distinct(uid, mother_education) %>%
   pull(mother_education)
 SpeakerSex <- long_present %>% 
   distinct(uid, sex) %>%
-  mutate(sex =  as.numeric(as.factor(sex))) %>%
+  mutate(sex =  as.numeric(as.factor(sex))-1) %>%
   pull(sex) # Female - 1; Male - 2
 SpeakerId <-long_present$uid
 SpeakerAge <- long_present$session
@@ -285,8 +293,8 @@ childid <- long_present$childid
 
 fit <- stan("stan_models/alignmenthierarchicaldemos.stan",
             chains = 1,
-            iter = 50)
-
+            iter = 350)
+saveRDS(fit, "hierppvt350iters.rds")
 
 fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
                          chains = 1, iter = 200)
@@ -317,11 +325,12 @@ long_present <- long_present %>%
   ungroup() %>%
   mutate(uid = paste0(subject, "_", person)) %>%
   mutate(uid = as.numeric(as.factor(uid)))
-
+  
 
 
 fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
-fit_hierarchical <- readRDS('newhierdemos200iters.rds')
+fit_hierarchical <- readRDS('newnewhierdemos200iters.rds')
+fit_hierarchical <- readRDS('hierppvt350iters.rds')
 
 SE_UPPER <- .84
 SE_LOWER <- .16
@@ -354,7 +363,7 @@ pars <- names(fit_hierarchical) %>%
 
 demo_abs <- names(fit_hierarchical) %>% 
   as_data_frame() %>% 
-  filter(str_detect(value, "mom_ed") | str_detect(value, "gender_ab")) %>% 
+  filter(str_detect(value, "mom") | str_detect(value, "gender")) %>% 
   pull()
 
 demo_ab_parameters <- extract(fit_hierarchical, demo_abs) %>%
@@ -428,3 +437,26 @@ together_cors <- old_cors %>%
 write_csv(together_cors, 'together_cors.csv')
 ```
 
+```{r plots}
+# Subpop plots
+parameter_cis %>% 
+  filter(type == 'subpop') %>% 
+  select(-person,-type) %>% 
+  mutate(estimate = mean) %>% 
+  ggplot(aes(x=id, y=estimate, fill = id))+ 
+  geom_bar(stat = 'identity', position = position_dodge()) +
+  geom_errorbar(aes(ymin=se_lower, ymax=se_upper), width = .2, position=position_dodge())+
+  guides(fill=FALSE)+
+  facet_wrap(~parameter)
+  
+```
+
+
+```{r}
+long_present %>%
+  group_by(age_years) %>%
+  summarise(ppvt = mean(ppvt)) %>%
+  ggplot(aes(x = age_years, y = ppvt)) +
+  geom_point() + 
+  geom_smooth()
+```

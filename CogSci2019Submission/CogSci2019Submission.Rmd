@@ -1,0 +1,374 @@
+---
+title: "Predicting Early Language Development with Linguistic Alignment"
+bibliography: library.bib
+csl: apa6.csl
+document-params: "10pt, letterpaper"
+
+author-information: > 
+    \author{{\large \bf Joseph Denby} \\ Department of Psychology \\ University of Chicago \\ \texttt{jgdenby@uchicago.edu}
+    \And {\large \bf Daniel Yurovsky} \\ Department of Psychology\\ University of Chicago \\\texttt{yurovsky@uchicago.edu}}
+
+abstract: >
+    Children are capable of quickly gaining enormous linguistic knowledge during early development, in part due to low-level features of their parents' speech. Some posit that parents contribute to their child's language development by calibrating their language according to their child's developmental abilities and needs. Here, we investigate this hypothesis by conducting a statistical analysis of this 'linguistic alignment' in a large-scale corpus of parent-child conversations recorded over a period of 5 years. Our results corroborate previous findings, showing strong parental alignment that slowly decreases as children mature; in addition, we demonstrate the impact of alignment on development by linking its effects with development outcome measures. 
+    
+keywords: >
+    Language acquisition; computational modeling; cognitive development
+    
+output: cogsci2016::cogsci_paper
+final-submission: \cogscifinalcopy
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=3, fig.height=3, fig.crop = F, 
+                      fig.pos = "tb", fig.path='figs/',
+                      echo=F, warning=F, cache=F, 
+                      message=F, sanitize = T)
+```
+
+```{r, libraries}
+library(png)
+library(grid)
+library(ggplot2)
+library(xtable)
+library(feather)
+library(tidyverse)
+library(rstan)
+```
+
+```{r, data}
+
+fit_hierarchical <- readRDS('../hierppvt350iters.rds')
+
+long_present <- read_feather('../ppvt_with_demos.feather')
+```
+
+```{r, parameters}
+SE_UPPER <- .84
+SE_LOWER <- .16
+
+pars <- names(fit_hierarchical) %>%
+  as_data_frame() %>%
+  filter(!str_detect(value, "Marker"), 
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab"),
+          !str_detect(value, "lp__")) %>%
+  pull()
+
+parameter_cis <- extract(fit_hierarchical, pars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER)) %>%
+  ungroup() %>% 
+  mutate(measure = gsub("eta_ab","eta-ab", measure)) %>%
+  separate(measure, into = c("parameter", "type") , sep = "_", 
+           extra = "merge") %>%
+  mutate(id = gsub("[^0-9]*","", str_extract(type, "\\[[^()]+\\]")),
+         type = gsub("\\[[^()]+\\]", "", type),
+         type = factor(type, levels = c("pop", "subpop", "speaker")),
+         id = case_when(
+           is.na(id) ~ "pop",
+           type == "subpop" & id == 1 ~ "child",
+           type == "subpop" & id == 2 ~ "parent",
+           T ~ id)
+         ) %>%
+  left_join(distinct(long_present, subject, uid, person) %>% 
+              mutate(uid = as.character(uid)), by = c("id" = "uid")) %>%
+  arrange(type, parameter) %>%
+  mutate(id = if_else(is.na(subject), id, as.character(subject))) %>%
+  select(-subject)
+
+demopars <- names(fit_hierarchical) %>%
+  as_data_frame() %>%
+  filter(str_detect(value, "mu") | str_detect(value, 'ppvt') | str_detect(value, 'sigma'),
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab")) %>%
+  pull()
+
+demoparameters <- extract(fit_hierarchical, demopars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER))
+```
+
+# Introduction 
+Within their first few years of life, children make vast linguistic strides. 
+Beginning in early toddlerhood, typically developing children gain over a thousand
+words in their vocabulary (as measured by the Communicative Development Inventories [@Mayor:2010kp] and quickly learn to produce unique, previously unheard utterances
+by combining known words in novel ways, becoming less repetitive over a short timespan [@Lieven:2009ii]. Perhaps even more impressive, toddlers can infer dimensions of
+semantic content from words purely through exposure and differential use [@Naigles:1990cw; @OVIDDS:2009uz].  
+
+   To explain children's capacity for rapid language learning, some posit that children acquire a robust
+understanding of complex structures (such as language) by picking up on subtle statistical regularities
+present in their environment. Evidence for such a theory in language development spans childhood as
+well as linguistic features. For instance, infants can infer word segmentation in fluent speech, a particularly
+nettlesome early language task, through mere exposure [@Anonymous:6O2YEUCo]; with extended exposure, toddlers can extract syntactic information as well [@Gomez:1999bx]. Statistical learning undergirds vocabulary acquisition as well, with infants being capable of learning word-referent mappings through cross-situational exposure [@Smith:2008gp].  
+
+  The aforementioned studies serve to flesh out the specific roles of low-level linguistic cues on early language learning. But, of course, most linguistic input doesn’t come from a lab setting – it comes from real-world adults. Touched upon in previously discussed research, the linguistic tuning hypothesis puts forward the idea that parents bolster their child's early language learning by calibrating the complexity of their speech to the particular abilities and needs of their
+children [@Montag:2015iy;@Snow:2018wf;@Thiessen:2005tx]. While the idea is intuitive and has some support, it faces some clear challenges. First, parents tend not to use simpler words when speaking to children, showing that there is no concrete tempering of vocabulary complexity for learning purposes [@Hayes:1988ue]. Second, parents tend not to directly correct their child’s syntactic errors, nor are children particularly receptive to corrections when they occur [@Brown:1970wd]. While these findings point out a lack of overt
+calibration of speech to ability, there may still be subtle adjustments occurring [@Sokolov:1993cr; @Spivey:2006fa]. For one, while overt syntactic correction may not occur (or be successful
+anyway), parents do appear liable to reformulate utterances that are ungrammatical, potentially
+providing ‘negative evidence’ for their child’s grammatical benefit [@Chouinard:2003kq; @HirshPasek:1984bd]. 
+
+  A parallel yet complementary vein of language development research investigates the presence of low-level cues in parental speech and their influence on child language learning. From this research, we know that child-directed speech contains features that facilitate language learning, and that more exposure tends to result in better outcomes [@Weisleder:2013ht]. Related, caregivers from families of high socioeconomic status (SES) tend to
+converse more with their children than their lower SES counterparts, and these increases are associated with improved development outcomes such as vocabulary size and school performance [@Anonymous:GIFaG1Qd; @Hoff:2003kx]. So, given that more granular aspects of parent speech can have substantial effects on a child's language development, it may be that linguistic tuning occurs at this level in subtle ways, particularly when it comes to non-content words (i.e., words
+that are not central to the topic of discussion.)  
+  
+  This idea of assessing the direct impact of a parent's usage of non-content word on language development relates to linguistic alignment, a phenomenon whereby
+conversational partners tend to align aspects of their communicative style and content according to
+various external influences e.g., [@Pennebaker:kqtgxul0]. Yurovsky, Doyle, & Frank [-@Anonymous:r2JoRscQ] investigates linguistic alignment in a natural language
+corpus of conversation between parents and children (CHILDES) [@MacWhinney:2000jx] to assess whether tuning occurs at the level of syntactic categories. Through this analysis, they find that syntactic alignment does indeed exist in both parents and children; moreover, parents exhibit a negative alignment trajectory over time, suggesting that the relationship their speech shares with their child's changes as a function of development. These results present a powerful proof of concept that syntactic alignment exists between parents and children, but it remains unclear whether alignment bears any sort of concrete relationship to language development.
+
+  Here, we extend their model by applying it to the Language Development
+Project (LDP) [@GoldinMeadow:2014hr], a corpus of
+ecological conversations between parents and their children over time, collected from a
+socioeconomically diverse sample of parent-child dyads. Moreover, we use alignment estimates alongside demographic information to predict language outcome measures, strengthening the linguistic tuning hypothesis by concretely showing how parents' sensitivity to their child's linguistic needs and abilities impacts their development. 
+
+# Model
+
+  The linguistic tuning hypothesis predicts that parents will calibrate their language in part by assessing their child's needs and abilities. So, we predict that parents will exhibit high alignment to their young children, but will reduce their alignment as their children mature. To test this prediction, we employ an extended version of the Hierarchical Alignment Model (HAM) implemented in Yurovsky et al. [-@Anonymous:r2JoRscQ] which both estimates the impact of a speaker's use of syntactic categories on their conversational partner's usage and uses these alignment estimates to predict language outcome scores. 
+  
+  At base, the model predicts, for each utterance, whether the speaker will produce a word from a given syntactic category.
+This prediction is generated by two factors: the speaker's baseline propensity towards using that category and the speaker's
+tendency to align, producing words from a category just used by their partner. In the model, the primary computation mimics a standard logistic regression - the production of a syntactic category within an utterance is treated as a binary outcome variable impacted by a linear combination of predictor variables (here, baseline usage and alignment.) The model's hierarchical structure then allows the estimates of baseline usage and alignment effects to be pooled across individual speakers and syntactic categories in a way that ensures statistical robustness.
+
+  The model used here then incorporates these alignment and baseline usage estimates as predictors in a linear regression model of PPVT [@PeabodyPictureVoca:im]. At this stage, PPVT is estimated as a linear combination of predictors reflecting alignment and baseline usage estimate for both parents and children alongside other predictors representing demographic variables (e.g., child's gender, mother's education) and the child's age.
+  
+## Model Details
+ The structure of the model used here greatly resembles that used in Yurovsky et al. [-@Anonymous:r2JoRscQ], in that it operates over utterances represented as binary vectors, with indices indicating the presence or absence of each of the 14 LIWC categories. The probability of producing each category in each utterance is predicted from two parameters: the speaker's baseline usage of that syntactic category ($\eta^{base}$), and the change in that speaker's baseline as a function of interacting with the listener ($\eta^{align}$). So, for replies to utterances that don't contain a given syntactic category, the production parameter for that category is computed by applying the inverse logit function to the appropriate baseline log odds:
+$$
+P(Production) = logit^{-1}(\eta^{base})
+$$
+Alternatively, replies to utterances that *do* contain a given syntactic category, the parameter computation takes into account the sum of the baseline and alignment log odds:
+$$
+P(Production) = logit^{-1}(\eta^{base}+\eta^{align})
+$$  
+   
+  To accommodate the variance in production across the LIWC categories, each baseline usage parameter was drawn from an uninformative prior ($\eta^{base} \sim Uniform(-5,5)$); alignment parameters were regularized towards 0 by way of implementing a conservative prior ($\eta^{align} \sim Normal(0,1)$).  
+  
+  All parameters were estimated hierarchically, which allows intelligent pooling of data across participants in the dataset. Each subpopulation (i.e., all parents and all children) obtained an alignment estimate, each of which produced speaker-level alignment estimates, which produced category-level alignment estimates. The order was flipped for baseline parameters in order to better reflect empirical baseline usages across syntactic categories; subpopulation estimates produced category-level estimates, which then produced speaker-level estimates. As in Yurovsky et al. [-@Anonymous:r2JoRscQ], we also include parameters that allow baseline ($\beta$) and alignment probabilities ($\alpha$) to change linearly over time.  
+  
+  Next, we extend the model used in Yurovsky et al. [-@Anonymous:r2JoRscQ] by using estimated parameters to predict PPVT scores, a widely used inventory for tracking language development. To do so, we effectively implemented a linear regression model, where PPVT scores were modeled as linear combinations of various predictor variables. These predictor variables included the child's age ($\kappa^{age}$), alignment parameter estimates for the child and their parent ($\kappa^{align}_{c}, \kappa^{align}_p$), the mother's education ($\kappa^{ed}$), the child's gender ($\kappa^{female}$), as well as interaction effects for all variables with age. The error variance for this model was estimated using parameter $\sigma$.  
+  
+  The model implemented here then serves two purposes: (1) It extends the analysis of Yurovsky et al. [-@Anonymous:r2JoRscQ] to a new dataset, aiming to replicate previous findings in a more diverse and representative sample, and (2) It incorporates alignment estimates in a predictive model of early language outcomes, serving to test the hypothesis that alignment has significant effects on language development over and above demographic features. To be specific, we hope to replicate non-zero estimates for $\eta$ parameters (demonstrating that alignment between parents and children exists across datasets), positive $\beta$ for children (showing that children increase their baseline usage of categories over time), and negative $\alpha$ for parents (showing that parents decrease their alignment as their children age.) Secondly, if the PPVT model estimates for parameters corresponding to the main or interaction effects of alignment are non-zero in the presence of demographic variables, we can infer that alignment has a significant effect on early language development.  
+
+```{r plot, fig.pos = 'H',fig.env = 'figure', fig.width=3, fig.cap="This plot is not beautiful yet."}
+
+parameter_cis %>% 
+  filter(type == 'subpop') %>% 
+  select(-person,-type) %>% 
+  mutate(Estimate = mean) %>% 
+  ggplot(aes(x=id, y=Estimate, fill = id))+ 
+  geom_bar(stat = 'identity', position = position_dodge()) +
+  geom_errorbar(aes(ymin=se_lower, ymax=se_upper), width = .1, position=position_dodge())+
+  guides(fill=FALSE)+
+  facet_wrap(~parameter)+
+  theme_bw()
+```
+
+# Analysis
+
+## Data and Methodology
+Transcripts were sourced from the Language Development Project corpus [@GoldinMeadow:2014hr], consisting of conversations between 62 child-parent pairs spanning 12 to 60 months of age. This corpus amounts to 712 total transcripts with a median representation of $12$ sessions per subject pair. The sample includes 30 female children and large representation of socioeconomic status based on the mother's level of education: 22 with an advanced degree, 20 with a bachelor's degree, 10 with some college or trade school, 8 with a high school degree or GED, and 2 with some high school.  
+
+  Following Yurovsky et al. [-@Anonymous:r2JoRscQ], successive utterances from a speaker within a transcript were concatenated into a single utterance. Individual utterances were then transformed into a binary vector with indices indicating the presence or absence of each of the 14 LIWC categories. This pre-processing ensured turned every transcript into a speaker-reply format: each utterance within a transcript was both a reply to the preceding utterance and a message to the next one. 
+  
+  Each transcript was then compressed, yielding 4 numbers for each LIWC category. For a pair of speakers *A* and *B* in a transcript, for each LIWC category, we computed the number of utterances from *A* to *B* containing the category ($N^{align}$), the number of utterances from *A* to *B* not containing the category ($N^{base}$), the number of utterances containing the category responding to an utterance containing the category ($C^{align}$), and the number of utterances containing the category responding to an utterance not containing the category ($C^{base}$). Aggregating in this way provided the platform for the model's sampling - for each transcript, $C^{base}$ and $C^{align}$ were drawn from Binomial distributions parameterized by $N^{base}$ and $N^{align}$ chances respectively, with probabilities computed via the logistic regression models outlined above.  
+  Sampling was performed using Stan, a probabilistic programming language that implements Hamiltonian Monte Carlo sampling methods [@Carpenter:2017ke]. Posterior distributions for each parameter in the model were estimated using 350 iterations (THIS WILL LIKELY CHANGE). \footnote{Code available at \texttt{https://github.com/callab/ldp-alignment}} 
+  
+```{r 2-col-image, fig.env = "figure*", fig.pos = "h", fig.width=6, fig.height=4, fig.align = "center", set.cap.width=T, num.cols.cap=2, fig.cap = "This is not the right plot but it is close."}
+img <- png::readPNG("ldp_hpds.png")
+grid::grid.raster(img)
+```
+
+## Results
+
+  Alignment estimates for parents and children were both significantly above zero, corroborating the findings of Yurovsky et al. [-@Anonymous:r2JoRscQ] in showing that both groups exhibit alignment (Figure 1). We also replicate the finding that parents appear to align more to their children than children align to their parents. The model estimates developmental baseline changes at approximately zero for parents, but significantly above zero for children, replicating previous findings. Alignment is estimated as having no significant age effect in this dataset, failing to replicate the early finding that parents tend to exhibit decreased alignment over their child's development. However, the mean estimate is trending negatively, suggesting this may be a function of the data's limited scope (Figure 2). 
+
+
+  The estimates for PPVT predictors are listed alongside their standard errors in Table 1. From the estimates we see, as we might expect, that PPVT is positively associated with the age of the child, the level of education of their mother, and their being female. Moreover, female children tend to have a decreased age effect on PPVT. Alongside these demographic effects, we see some robust alignment effects on PPVT: parental alignment is associated with increased PPVT, but a decreased age effect, while child alignment is associated with decreased PPVT and an increased age effect. 
+  
+```{r xtable, results = 'asis'}
+demotable <- demoparameters %>% 
+  mutate(StandardError = (se_upper-se_lower)/2,
+         Estimate = mean) %>% 
+  select(measure,Estimate, StandardError) %>% 
+  xtable::xtable(., digits=2,caption = 'Parameter Estimates for PPVT predictors with standard errors.')
+
+print(demotable, type="latex", comment = F, table.placement = "H")
+```
+
+
+# Discussion
+  In an effort to understand and investigate how children rapidly acquire language, some have put forward the linguistic tuning hypothesis, arguing that the language children hear is somehow calibrated to their particular needs and abilities [@Snow:2018wf]. While the idea is theoretically compelling, empirical work has produced mixed results, with strong results in favor of [@Chouinard:2003kq; @HirshPasek:1984bd] and against [@Brown:1970wd; @Hayes:1988ue].  
+  
+  However, much of this prior work investigates tuning as an overt effort on behalf of parents or tuning with respect to content words, with less examining the potential role of low-level syntactic influence [@Hoff:2003kx]. Yurovsky et al. [-@Anonymous:r2JoRscQ] presents just such an examination, demonstrating using Bayesian hierarchical modeling that parents align to their children according to their particular language usage at the level of syntactic categories. This paper extends their model by applying it to a new socioeconomically diverse sample of families [@GoldinMeadow:2014hr] and leveraging the model's alignment estimates to predict language development outcomes.  
+  
+  The analysis presented here largely replicates the findings of Yurovsky et al. [-@Anonymous:r2JoRscQ], showing strong alignment effects for both parents and their children, a substantial age effect for baseline useage in children, and a trending negative effect of age on alignment for parents. Moreover, we demonstrate that these alignment estimates have substantial power in predicting language development outcomes, even in the presence of demographic features such as gender and socioeconomic status. As such, these results serve to further the linguistic tuning hypothesis, showing that alignment is a robust effect that appears to have a relationship with language development independent of demographic correlates. 
+  
+
+  
+  
+  
+<!-- The entire content of a paper (including figures, references, and anything else) can be no longer than six pages in the \textbf{initial submission}. In the \textbf{final submission}, the text of the paper, including an author line, must fit on six pages. Up to one additional page can be used for acknowledgements and references. -->
+
+<!-- The text of the paper should be formatted in two columns with an -->
+<!-- overall width of 7 inches (17.8 cm) and length of 9.25 inches (23.5 -->
+<!-- cm), with 0.25 inches between the columns. Leave two line spaces -->
+<!-- between the last author listed and the text of the paper; the text of -->
+<!-- the paper (starting with the abstract) should begin no less than 2.75 inches below the top of the -->
+<!-- page. The left margin should be 0.75 inches and the top margin should -->
+<!-- be 1 inch.  \textbf{The right and bottom margins will depend on -->
+<!-- whether you use U.S. letter or A4 paper, so you must be sure to -->
+<!-- measure the width of the printed text.} Use 10~point Times Roman -->
+<!-- with 12~point vertical spacing, unless otherwise specified. -->
+
+<!-- The title should be in 14~point bold font, centered. The title should -->
+<!-- be formatted with initial caps (the first letter of content words -->
+<!-- capitalized and the rest lower case). In the initial submission, the -->
+<!-- phrase ``Anonymous CogSci submission'' should appear below the title, -->
+<!-- centered, in 11~point bold font.  In the final submission, each -->
+<!-- author's name should appear on a separate line, 11~point bold, and -->
+<!-- centered, with the author's email address in parentheses. Under each -->
+<!-- author's name list the author's affiliation and postal address in -->
+<!-- ordinary 10~point type. -->
+
+<!-- Indent the first line of each paragraph by 1/8~inch (except for the -->
+<!-- first paragraph of a new section). Do not add extra vertical space -->
+<!-- between paragraphs. -->
+
+
+<!-- # First-Level Headings -->
+
+<!-- First level headings should be in 12 point , initial caps, bold and -->
+<!-- centered. Leave one line space above the heading and 1/4~line space -->
+<!-- below the heading. -->
+
+<!-- ## Second-Level Headings -->
+
+<!-- Second level headings should be 11 point , initial caps, bold, and -->
+<!-- flush left. Leave one line space above the heading and 1/4~ line -->
+<!-- space below the heading. -->
+
+<!-- ### Third-Level Headings -->
+
+<!-- Third-level headings should be 10 point , initial caps, bold, and flush -->
+<!-- left. Leave one line space above the heading, but no space after the -->
+<!-- heading. -->
+
+<!-- # Formalities, Footnotes, and Floats -->
+
+<!-- Use standard APA citation format. Citations within the text should -->
+<!-- include the author's last name and year. If the authors' names are -->
+<!-- included in the sentence, place only the year in parentheses, as in -->
+<!-- [-@NewellSimon1972a], but otherwise place the entire reference in -->
+<!-- parentheses with the authors and year separated by a comma -->
+<!-- [@NewellSimon1972a]. List multiple references alphabetically and -->
+<!-- separate them by semicolons [@ChalnickBillman1988a; @NewellSimon1972a].  -->
+<!-- Use the et. al. construction only after listing all the authors to a -->
+<!-- publication in an earlier reference and for citations with four or -->
+<!-- more authors. -->
+
+<!-- For more information on citations in RMarkdown, see **[here](http://rmarkdown.rstudio.com/authoring_bibliographies_and_citations.html#citations).** -->
+
+<!-- ## Footnotes -->
+
+<!-- Indicate footnotes with a number\footnote{Sample of the first -->
+<!-- footnote.} in the text. Place the footnotes in 9 point type at the -->
+<!-- bottom of the page on which they appear. Precede the footnote with a -->
+<!-- horizontal rule.\footnote{Sample of the second footnote.} You can also use  -->
+<!-- markdown formatting to include footnotes using this syntax [^1]. -->
+
+<!-- [^1]: Sample of a markdown footnote. -->
+
+<!-- ## Figures -->
+
+<!-- All artwork must be very dark for purposes of reproduction and should -->
+<!-- not be hand drawn. Number figures sequentially, placing the figure -->
+<!-- number and caption, in 10 point, after the figure with one line space -->
+<!-- above the caption and one line space below it. If necessary, leave extra white space at -->
+<!-- the bottom of the page to avoid splitting the figure and figure -->
+<!-- caption. You may float figures to the top or bottom of a column, or -->
+<!-- set wide figures across both columns. -->
+
+<!-- ## Two-column images -->
+
+<!-- You can read local images using png package for example and plot  -->
+<!-- it like a regular plot using grid.raster from the grid package.  -->
+<!-- With this method you have full control of the size of your image. **Note: Image must be in .png file format for the readPNG function to work.** -->
+
+<!-- You might want to display a wide figure across both columns. To do this, you change the `fig.env` chunk option to `figure*`. To align the image in the center of the page, set `fig.align` option to `center`. To format the width of your caption text, you set the `num.cols.cap` option to `2`. -->
+
+<!-- ```{r 2-col-image, fig.env = "figure*", fig.pos = "h", fig.width=4, fig.height=2, fig.align = "center", set.cap.width=T, num.cols.cap=2, fig.cap = "This image spans both columns. And the caption text is limited to 0.8 of the width of the document."} -->
+<!-- img <- png::readPNG("figs/walrus.png") -->
+<!-- grid::grid.raster(img) -->
+<!-- ``` -->
+
+<!-- ## One-column images -->
+
+<!-- Single column is the default option, but if you want set it explicitly, set `fig.env` to `figure`. Notice that the `num.cols` option for the caption width is set to `1`. -->
+
+<!-- ```{r image, fig.env = "figure", fig.pos = "H", fig.align='center', fig.width=2, fig.height=2, set.cap.width=T, num.cols.cap=1, fig.cap = "One column image."} -->
+<!-- img <- png::readPNG("figs/lab_logo_stanford.png") -->
+<!-- grid::grid.raster(img) -->
+<!-- ``` -->
+
+
+<!-- ## R Plots -->
+
+<!-- You can use R chunks directly to plot graphs. And you can use latex floats in the -->
+<!-- fig.pos chunk option to have more control over the location of your plot on the page. For more information on latex placement specifiers see **[here](https://en.wikibooks.org/wiki/LaTeX/Floats,_Figures_and_Captions)** -->
+
+<!-- ```{r plot, fig.env="figure", fig.pos = "H", fig.align = "center", fig.width=2, fig.height=2, fig.cap = "R plot" } -->
+<!-- x <- 0:100 -->
+<!-- y <- 2 * (x + rnorm(length(x), sd = 3) + 3) -->
+
+<!-- ggplot2::ggplot(data = data.frame(x, y),  -->
+<!--                 aes(x = x, y = y)) +  -->
+<!--   geom_point() +  -->
+<!--   geom_smooth(method = "lm") -->
+<!-- ``` -->
+
+
+<!-- ## Tables -->
+
+<!-- Number tables consecutively; place the table number and title (in -->
+<!-- 10 point) above the table with one line space above the caption and -->
+<!-- one line space below it, as in Table 1. You may float -->
+<!-- tables to the top or bottom of a column, set wide tables across both -->
+<!-- columns. -->
+
+<!-- You can use the xtable function in the xtable package. -->
+
+<!-- ```{r xtable, results="asis"} -->
+<!-- n <- 100 -->
+<!-- x <- rnorm(n) -->
+<!-- y <- 2*x + rnorm(n) -->
+<!-- out <- lm(y ~ x) -->
+
+<!-- tab1 <- xtable::xtable(summary(out)$coef, digits=c(0, 2, 2, 1, 2),  -->
+<!--                        caption = "This table prints across one column.") -->
+
+<!-- print(tab1, type="latex", comment = F, table.placement = "H") -->
+<!-- ``` -->
+
+<!-- # Acknowledgements -->
+
+<!-- Place acknowledgments (including funding information) in a section at -->
+<!-- the end of the paper. -->
+
+# References 
+
+```{r}
+# References will be generated automatically by Pandoc and included here.
+# The following code is some latex to format the bibliography. Do not remove it.
+```
+
+\setlength{\parindent}{-0.1in} 
+\setlength{\leftskip}{0.125in}
+\noindent
