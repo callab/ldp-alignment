@@ -186,6 +186,14 @@ old_stats %>%
 
 raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
 
+subjs_over_10 <- raw_long_present %>% 
+  select(subject,session) %>% 
+  distinct() %>% 
+  group_by(subject) %>% 
+  summarise(n=n()) %>% 
+  filter(n>=10) %>% 
+  pull(subject)
+
 long_present <- raw_long_present %>% 
   arrange(subject, session, category, run) %>%
   group_by(subject, session, category) %>%
@@ -230,12 +238,14 @@ liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
 
 long_present <- long_present_demos %>%
   ungroup() %>%
+  filter(subject %in%subjs_over_10) %>% 
   mutate(uid = paste0(subject, "_", person)) %>%
   mutate(uid = as.numeric(as.factor(uid))) %>% 
   mutate(parentid = case_when(person == 'Parent' ~ uid,
                               TRUE ~ uid + 1),
          childid = case_when(person == 'Child' ~ uid,
                              TRUE ~ uid - 1))
+  
 
 ppvt_slope_by_subject <- long_present %>% 
   group_by(subject) %>% 
@@ -249,6 +259,8 @@ long_present <- long_present %>%
 
 write_feather(long_present, 'ppvt_with_demos.feather')
 
+
+
 ## STAN DATA ##
 MidAge <- median(long_present$session)
 NumMarkers <- length(unique(liwc$category))
@@ -261,14 +273,13 @@ SpeakerSubPop <- long_present %>%
   distinct(person, uid) %>%
   mutate(subpop =  as.numeric(as.factor(person))) %>%
   pull(subpop) # Child - 1; Parent - 2
-# Make these two zero-indexed? for lin regression purposes
 SpeakerMomEd <- long_present %>% 
-  mutate(mother_education = mother_education) %>% 
+  mutate(mother_education = mother_education+1) %>% 
   distinct(uid, mother_education) %>%
   pull(mother_education)
 SpeakerSex <- long_present %>% 
   distinct(uid, sex) %>%
-  mutate(sex =  as.numeric(as.factor(sex))-1) %>%
+  mutate(sex =  as.numeric(as.factor(sex))) %>%
   pull(sex) # Female - 1; Male - 2
 SpeakerId <-long_present$uid
 SpeakerAge <- long_present$session
@@ -295,6 +306,11 @@ fit <- stan("stan_models/alignmenthierarchicaldemos.stan",
             chains = 1,
             iter = 350)
 saveRDS(fit, "hierppvt350iters.rds")
+
+fit <- stan("stan_models/alignmentcompletelyhierarchical.stan",
+            chains = 1,
+            iter = 350)
+saveRDS(fit, "demohier350iters.rds")
 
 fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
                          chains = 1, iter = 200)
@@ -331,6 +347,8 @@ long_present <- long_present %>%
 fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
 fit_hierarchical <- readRDS('newnewhierdemos200iters.rds')
 fit_hierarchical <- readRDS('hierppvt350iters.rds')
+fit_hierarchical <- fit
+
 
 SE_UPPER <- .84
 SE_LOWER <- .16
