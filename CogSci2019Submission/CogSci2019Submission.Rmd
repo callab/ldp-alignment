@@ -15,7 +15,7 @@ keywords: >
     Language acquisition; computational modeling; cognitive development
     
 output: cogsci2016::cogsci_paper
-final-submission: \cogscifinalcopy
+# final-submission: \cogscifinalcopy
 ---
 
 ```{r global_options, include=FALSE}
@@ -156,7 +156,7 @@ print(sample_table, type="latex", comment = F, table.placement = "H")
 
 
 ## Model Details
- The structure of the model used here greatly resembles that used in Yurovsky et al. [-@Anonymous:r2JoRscQ], in that it operates over utterances represented as binary vectors, with indices indicating the presence or absence of each of the 14 LIWC categories. The probability of producing each category in each utterance is predicted from two parameters: the speaker's baseline usage of that syntactic category ($\eta^{base}$), and the change in that speaker's baseline as a function of interacting with the listener ($\eta^{align}$). So, for a given syntactic category $c$, for replies to utterances that don't contain $c$, the production parameter for that category is computed by applying the inverse logit function to the appropriate baseline log odds:
+ The structure of the model used here greatly resembles that used in Yurovsky et al. [-@Anonymous:r2JoRscQ], in that it operates over utterances represented as binary vectors, with indices indicating the presence or absence of each of the 14 LIWC categories (Table 1). The probability of producing each category in each utterance is predicted from two parameters: the speaker's baseline usage of that syntactic category ($\eta^{base}$), and the change in that speaker's baseline as a function of interacting with the listener ($\eta^{align}$). So, for a given syntactic category $c$, for replies to utterances that don't contain $c$, the production parameter for that category is computed by applying the inverse logit function to the appropriate baseline log odds:
 $$
 P(Production_c) = logit^{-1}(\eta^{base}_c)
 $$
@@ -210,10 +210,13 @@ grid::grid.raster(img)
 
   Alignment estimates ($\eta^{align}$) for parents and children were both significantly above zero, corroborating the findings of Yurovsky et al. [-@Anonymous:r2JoRscQ] in showing that both groups exhibit alignment (Figure 1). We also replicate the finding that parents appear to align more to their children than children align to their parents. The model estimates developmental baseline changes ($\beta$) at approximately zero for parents, but significantly above zero for children, replicating previous findings. Alignment is estimated as having no significant age effect ($\alpha$) in this dataset, failing to replicate the early finding that parents tend to exhibit decreased alignment over their child's development. However, the mean estimate is trending negatively, suggesting this may be a function of the data's limited scope (Figure 2). 
 
-  The estimates for PPVT predictors are listed alongside their standard errors in Table 1. In our results, PPVT is positively associated with the age of the child, the level of education of their mother, and their being female. Moreover, female children tend to have a decreased age effect on PPVT; this means that for female children, the expected increase in PPVT over time is less stark (EXACT EFFECTS ARE DEPENDENT ON FIT RESULTS).  Alongside these demographic effects, we see some robust alignment effects on PPVT: child alignment is associated with increased PPVT, but a decreased age effect, while parental alignment is associated with decreased PPVT and a decreased age effect. 
+  The estimates for PPVT predictors are listed alongside their standard errors in Table 2. In our results, PPVT is positively associated with the age of the child, the level of education of their mother, and their being female. Moreover, female children tend to have a decreased age effect on PPVT; this means that for female children, the expected increase in PPVT over time is less stark (EXACT EFFECTS ARE DEPENDENT ON FIT RESULTS).  Alongside these demographic effects, we see some robust alignment effects on PPVT: child alignment is associated with increased PPVT, but a decreased age effect, while parental alignment is associated with decreased PPVT and a decreased age effect. 
   
 ```{r coefficients xtable, results = 'asis'}
 ppvt_coefficients <- c("Age (years)", "Child Alignment","Age x Child Alignment","Female","Age x Female","Intercept", "Mother's Education", "Age x Mother's Education","Parent Alignment","Age x Parent Alignment","$\\sigma$" )
+
+order <- c("Intercept","Age (years)", "Female","Age x Female","Mother's Education", "Age x Mother's Education","Child Alignment","Age x Child Alignment", "Parent Alignment","Age x Parent Alignment","$\\sigma$" )
+  
 
 demoparameters %>% 
   mutate(measure = replace(measure, measure == 'ppvt_education', "ppvt_mother_ed")) %>% 
@@ -222,6 +225,7 @@ demoparameters %>%
   mutate(StandardError = (se_upper-se_lower)/2,
          Estimate = mean) %>% 
   select(measure,Estimate, StandardError) %>% 
+  slice(match(order, measure)) %>%
   xtable::xtable(., digits=2,caption = 'Parameter Estimates for PPVT predictors with standard errors.') %>% 
   print(., type="latex", comment = F, table.placement = "H", sanitize.text.function = function(x){x})
 
@@ -242,7 +246,7 @@ demoparameters %>%
   
   However, much of this prior work investigates tuning as an overt effort on behalf of parents or tuning with respect to content words, with less examining the potential role of low-level syntactic influence [@Hoff:2003kx]. Yurovsky et al. [-@Anonymous:r2JoRscQ] presents just such an examination, demonstrating using Bayesian hierarchical modeling that parents align to their children according to their particular language usage at the level of syntactic categories. This paper extends their model by applying it to a new socioeconomically diverse sample of families [@GoldinMeadow:2014hr] and leveraging the model's alignment estimates to predict language development outcomes.  
   
-  The analysis presented here largely replicates the findings of Yurovsky et al. [-@Anonymous:r2JoRscQ], showing strong alignment effects for both parents and their children, a substantial age effect for baseline useage in children, and a trending negative effect of age on alignment for parents. Moreover, we demonstrate that these alignment estimates have substantial power in predicting language development outcomes, even in the presence of demographic features such as gender and socioeconomic status. As such, these results serve to further the linguistic tuning hypothesis, showing that alignment is a robust effect that appears to have a relationship with language development independent of demographic correlates. 
+  The analysis presented here replicates the findings of Yurovsky et al. [-@Anonymous:r2JoRscQ], showing strong alignment effects for both parents and their children, a substantial age effect for baseline useage in children, and a trending negative effect of age on alignment for parents. Moreover, we demonstrate that these alignment estimates have substantial power in predicting language development outcomes, even in the presence of demographic features such as gender and socioeconomic status. As such, these results serve to further the linguistic tuning hypothesis, showing that alignment is a robust effect that appears to have a relationship with language development independent of demographic correlates. 
   
 
   
