@@ -184,82 +184,87 @@ old_stats %>%
 
 ```{r Old Fit with Demos and PPVT}
 
-raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
+# raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
+# 
+# subjs_over_10 <- raw_long_present %>% 
+#   select(subject,session) %>% 
+#   distinct() %>% 
+#   group_by(subject) %>% 
+#   summarise(n=n()) %>% 
+#   filter(n>=10) %>% 
+#   pull(subject)
+# 
+# long_present <- raw_long_present %>% 
+#   arrange(subject, session, category, run) %>%
+#   group_by(subject, session, category) %>%
+#   mutate(lag_count = lag(count)) %>%
+#   filter(!is.na(lag_count)) %>%
+#   group_by(subject, session, person, category) %>%
+#   mutate(BA = count > 0 & lag_count > 0,
+#          notBA = count == 0 & lag_count > 0,
+#          BnotA = count > 0 & lag_count == 0,
+#          notBnotA = count == 0 & lag_count == 0) %>%
+#   summarise_at(vars(BA,notBA,BnotA,notBnotA), sum) %>%
+#   mutate(NumUtterancesAB = BA +notBA, 
+#          NumUtterancesNotAB = BnotA + notBnotA) %>%
+#   rename(CountsAB = BA, CountsNotAB = BnotA) %>%
+#     select(-notBA, - notBnotA)
+# 
+# # Join demographic info and ppvt onto utterance data; convert categorical info to binary
+# long_present_demos <- long_present %>% 
+#   left_join(subjs, by = 'subject') %>% 
+#   left_join(ppvt, by= 'subject') %>% 
+#   na.omit() %>% 
+#   mutate(female = as.numeric(sex == 'F'),
+#          male = as.numeric(sex == 'M'),
+#          white = as.numeric(sex == 'WH'),
+#          black = as.numeric(sex == 'BL'),
+#          multi = as.numeric(sex == '2+'),
+#          income_category = income_category - 1)
+# 
+# long_present_demos %>% 
+#   ungroup() %>% 
+#   select(subject, mother_education) %>%
+#   distinct() %>% 
+#   group_by(mother_education) %>% 
+#   summarise(n=n())
+# 
+# # treat mother_ed as ordinal variable
+# conversion = c("Some High School"=0, "High School or GED"=1, "Some College or Trade School"=2, "Bachelor's Degree"=3, "Advanced Degree"=4)
+# long_present_demos$mother_education = conversion[long_present_demos$mother_education]
+# 
+# liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
+#   rename(word = X1, category = X2)
+# 
+# long_present <- long_present_demos %>%
+#   ungroup() %>%
+#   filter(subject %in%subjs_over_10) %>% 
+#   mutate(uid = paste0(subject, "_", person)) %>%
+#   mutate(uid = as.numeric(as.factor(uid))) %>% 
+#   mutate(parentid = case_when(person == 'Parent' ~ uid,
+#                               TRUE ~ uid + 1),
+#          childid = case_when(person == 'Child' ~ uid,
+#                              TRUE ~ uid - 1))
+#   
+# 
+# ppvt_slope_by_subject <- long_present %>% 
+#   group_by(subject) %>% 
+#   select(subject, ppvt, age_years) %>% 
+#   distinct() %>% 
+#   do(model = lm(ppvt~age_years, .)$coefficients[2][[1]]) %>% 
+#   mutate(model = replace_na(model,0))
+# 
+# long_present <- long_present %>% 
+#   left_join(ppvt_slope_by_subject, by = 'subject') 
+# 
+# write_feather(long_present, 'ppvt_with_demos.feather')
+```
 
-subjs_over_10 <- raw_long_present %>% 
-  select(subject,session) %>% 
-  distinct() %>% 
-  group_by(subject) %>% 
-  summarise(n=n()) %>% 
-  filter(n>=10) %>% 
-  pull(subject)
-
-long_present <- raw_long_present %>% 
-  arrange(subject, session, category, run) %>%
-  group_by(subject, session, category) %>%
-  mutate(lag_count = lag(count)) %>%
-  filter(!is.na(lag_count)) %>%
-  group_by(subject, session, person, category) %>%
-  mutate(BA = count > 0 & lag_count > 0,
-         notBA = count == 0 & lag_count > 0,
-         BnotA = count > 0 & lag_count == 0,
-         notBnotA = count == 0 & lag_count == 0) %>%
-  summarise_at(vars(BA,notBA,BnotA,notBnotA), sum) %>%
-  mutate(NumUtterancesAB = BA +notBA, 
-         NumUtterancesNotAB = BnotA + notBnotA) %>%
-  rename(CountsAB = BA, CountsNotAB = BnotA) %>%
-    select(-notBA, - notBnotA)
-
-# Join demographic info and ppvt onto utterance data; convert categorical info to binary
-long_present_demos <- long_present %>% 
-  left_join(subjs, by = 'subject') %>% 
-  left_join(ppvt, by= 'subject') %>% 
-  na.omit() %>% 
-  mutate(female = as.numeric(sex == 'F'),
-         male = as.numeric(sex == 'M'),
-         white = as.numeric(sex == 'WH'),
-         black = as.numeric(sex == 'BL'),
-         multi = as.numeric(sex == '2+'),
-         income_category = income_category - 1)
-
-long_present_demos %>% 
-  ungroup() %>% 
-  select(subject, mother_education) %>%
-  distinct() %>% 
-  group_by(mother_education) %>% 
-  summarise(n=n())
-
-# treat mother_ed as ordinal variable
-conversion = c("Some High School"=0, "High School or GED"=1, "Some College or Trade School"=2, "Bachelor's Degree"=3, "Advanced Degree"=4)
-long_present_demos$mother_education = conversion[long_present_demos$mother_education]
+```{r Run Stan Model with PPVT}
+long_present <- read_feather('ppvt_with_demos.feather')
 
 liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
   rename(word = X1, category = X2)
-
-long_present <- long_present_demos %>%
-  ungroup() %>%
-  filter(subject %in%subjs_over_10) %>% 
-  mutate(uid = paste0(subject, "_", person)) %>%
-  mutate(uid = as.numeric(as.factor(uid))) %>% 
-  mutate(parentid = case_when(person == 'Parent' ~ uid,
-                              TRUE ~ uid + 1),
-         childid = case_when(person == 'Child' ~ uid,
-                             TRUE ~ uid - 1))
-  
-
-ppvt_slope_by_subject <- long_present %>% 
-  group_by(subject) %>% 
-  select(subject, ppvt, age_years) %>% 
-  distinct() %>% 
-  do(model = lm(ppvt~age_years, .)$coefficients[2][[1]]) %>% 
-  mutate(model = replace_na(model,0))
-
-long_present <- long_present %>% 
-  left_join(ppvt_slope_by_subject, by = 'subject') 
-
-write_feather(long_present, 'ppvt_with_demos.feather')
-
-
 
 ## STAN DATA ##
 MidAge <- median(long_present$session)
@@ -290,32 +295,33 @@ CountsAB <- long_present$CountsAB
 CountsNotAB <- long_present$CountsNotAB
 StdDev <- 1
 
-ppvt_vals <- long_present$ppvt
-age_years <- long_present$age_years
-income_category <- long_present$income_category
-mother_education <- long_present$mother_education
-female <- long_present$female
-black <- long_present$black
-multi <- long_present$multi
-ppvt_slopes <- long_present$model
 parentid <- long_present$parentid
 childid <- long_present$childid
+ppvt_vals <- long_present$ppvt
+age_years <- long_present$age_years
+mother_education <- long_present$mother_education
+female <- long_present$female
+# black <- long_present$black
+# multi <- long_present$multi
+# income_category <- long_present$income_category
+# ppvt_slopes <- long_present$model
 ###############
 
 fit <- stan("stan_models/alignmenthierarchicaldemos.stan",
             chains = 1,
-            iter = 350)
-saveRDS(fit, "hierppvt350iters.rds")
+            iter = 100)
 
-fit <- stan("stan_models/alignmentcompletelyhierarchical.stan",
-            chains = 1,
-            iter = 350)
-saveRDS(fit, "demohier350iters.rds")
+# saveRDS(fit, "hierppvt350iters.rds")
 
-fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
-                         chains = 1, iter = 200)
-
-saveRDS(fit_hierarchical, 'stanfits/oldmodeldemos_short.rds')
+# fit <- stan("stan_models/alignmentcompletelyhierarchical.stan",
+#             chains = 1,
+#             iter = 350)
+# saveRDS(fit, "demohier350iters.rds")
+# 
+# fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
+#                          chains = 1, iter = 200)
+# 
+# saveRDS(fit_hierarchical, 'stanfits/oldmodeldemos_short.rds')
 ```
 
 ```{r fit extraction}
