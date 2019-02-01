@@ -261,7 +261,7 @@ old_stats %>%
 ```
 
 ```{r Run Stan Model with PPVT}
-long_present <- read_feather('ppvt_with_demos.feather')
+long_present <- read_feather('data/ppvt_with_demos.feather')
 
 liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
   rename(word = X1, category = X2)
@@ -293,7 +293,7 @@ NumUtterancesAB <- long_present$NumUtterancesAB
 NumUtterancesNotAB <- long_present$NumUtterancesNotAB
 CountsAB <- long_present$CountsAB
 CountsNotAB <- long_present$CountsNotAB
-StdDev <- 1
+StdDev <- .25
 
 parentid <- long_present$parentid
 childid <- long_present$childid
@@ -309,9 +309,11 @@ female <- long_present$female
 
 fit <- stan("stan_models/alignmenthierarchicaldemos.stan",
             chains = 1,
-            iter = 100)
+            iter = 500)
 
-# saveRDS(fit, "hierppvt350iters.rds")
+saveRDS(fit, "hierppvt500iters.rds")
+
+divergent <- get_sampler_params(fit_hierarchical, inc_warmup=FALSE)[[1]][,'divergent__']
 
 # fit <- stan("stan_models/alignmentcompletelyhierarchical.stan",
 #             chains = 1,
@@ -354,6 +356,7 @@ fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
 fit_hierarchical <- readRDS('newnewhierdemos200iters.rds')
 fit_hierarchical <- readRDS('hierppvt350iters.rds')
 fit_hierarchical <- fit
+fit_hierarchical <- readRDS('hierppvt500iters.rds')
 
 
 SE_UPPER <- .84
