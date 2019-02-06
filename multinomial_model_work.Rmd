@@ -366,3 +366,42 @@ rstan::extract(fit, stan_names[[1]][1:10]) %>%
   View()
 ```
 
+```{r}
+lag_data <- together_present %>%
+  select(-null, -lag_null) %>%
+  mutate(row = 1:n()) %>%
+  gather(liwc, count, -subject, -session, -person, -row) %>%
+  separate(liwc, into = c("type", "liwc"), sep = "_", fill = "left") %>%
+  mutate(type = if_else(is.na(type), "current", "lag")) %>%
+  spread(type, count) %>%
+  group_by(person, session, subject, row) %>%
+  mutate(current = current/sum(current, na.rm = T),
+         lag = lag/sum(lag, na.rm = T)) %>%
+  group_by(person, session, subject, row, liwc)
+
+
+lag_data %>%
+  filter(subject == 22, session < 5) %>%
+  lm(logit(current) ~ logit(lag) * liwc * person, data = .) %>%
+  summary()
+  
+
+lag_data %>%
+  filter(subject == 22, session < 5) %>%
+  mutate(current = current > 0, lag = lag >0) %>%
+  glm(current ~ lag * liwc * person, data = .) %>%
+  summary()
+  
+  
+  
+  ggplot(aes(x = lag, y = current, color = person)) +
+  geom_point(alpha = .01) + 
+  facet_grid(person ~ session) +
+  geom_smooth(se = F,method = "loess") +
+  theme_classic() +
+  geom_hline(aes(yintercept = 0), lty =2) + 
+  theme(legend.position = "none")
+  
+  
+```
+
