@@ -195,7 +195,7 @@ liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
 liwc_points <- liwc %>%
   group_by(word) %>% 
   mutate(n = n(),
-         points= 1)
+         points= 1/n)
 
 ```
 
@@ -267,35 +267,47 @@ long_present <- data_frame()
 for (j in 1:length(d)) {
   tokens_slice <- t[[j]]
 
-  temp_raw <- d[[j]] %>%
+  # temp_raw <- d[[j]] %>%
+  #   bind_cols(tokens_slice) %>%
+  #   gather(liwc_word, count, names(present)) %>%
+  #   left_join(liwc_points, by = c("liwc_word" = "word")) %>%
+  #   ungroup() 
+  
+  # # split up temp by present multi-LIWC words and all others
+  # multi_liwc_temp <- temp_raw %>% 
+  #   filter(count==T,
+  #          n>1) 
+  # 
+  # other_temp <- temp_raw %>% 
+  #   filter(count==F | n==1)
+  # 
+  # # use sample_n to randomly select only one LIWC category for multi-LIWC words
+  # multi_liwc_temp <- multi_liwc_temp %>% 
+  #   ungroup() %>% 
+  #   group_by(run, subject,session, person,word, liwc_word,count) %>% 
+  #   sample_n(1) %>%
+  #   ungroup() 
+  
+  # bind words back together and count up instances
+  # temp <- other_temp %>% 
+  #   bind_rows(multi_liwc_temp) %>% 
+  #   mutate(count = case_when(count == TRUE ~ points,
+  #                          TRUE ~ 0)) %>%
+  #   group_by(subject, session, person, category,run) %>%
+  #   summarise(count = sum(count)) %>%
+  #   arrange(run) 
+  
+  # Count up instances of LIWC words according to liwc_points
+  temp <- d[[j]] %>%
     bind_cols(tokens_slice) %>%
     gather(liwc_word, count, names(present)) %>%
     left_join(liwc_points, by = c("liwc_word" = "word")) %>%
-    ungroup() 
-  
-  # split up temp by present multi-LIWC words and all others
-  multi_liwc_temp <- temp_raw %>% 
-    filter(count==T,
-           n>1) 
-  
-  other_temp <- temp_raw %>% 
-    filter(count==F | n==1)
-  
-  # use sample_n to randomly select only one LIWC category for multi-LIWC words
-  multi_liwc_temp <- multi_liwc_temp %>% 
     ungroup() %>% 
-    group_by(run, subject,session, person,word, liwc_word,count) %>% 
-    sample_n(1) %>%
-    ungroup() 
-  
-  # bind words back together and count up instances
-  temp <- other_temp %>% 
-    bind_rows(multi_liwc_temp) %>% 
     mutate(count = case_when(count == TRUE ~ points,
                            TRUE ~ 0)) %>%
     group_by(subject, session, person, category,run) %>%
     summarise(count = sum(count)) %>%
-    arrange(run) 
+    arrange(run)
 
   long_present <- bind_rows(long_present,temp)
 }
@@ -306,27 +318,26 @@ write_feather(long_present, 'data/RECOUNT_long_present.feather')
 
 ```{r Adjust LIWC counts for multi LIWC words}
 
-## Maybe look into Dirichlet for multicategory real values?
-
-# Or, in counting, for multiLIWC words, randomly assign their influence to one of their categories
 long_present <- read_feather('data/RECOUNT_long_present.feather')
 
+# Get length of every utterance
 split_utts <- split_utts %>% 
   mutate(length = str_count(chat, '\\+|\\s'))
 
+# Spread utterances by category
 long_present <- long_present %>% 
   distinct(subject, session, person, category, run, .keep_all = TRUE) %>% 
   spread(category,count, fill = 0)
 
+# Join length onto each utterance
 together_present <- long_present %>%
   left_join(split_utts, by=c('subject','session','run','person'))
 
+# Compute null count
 together_present <- together_present %>% 
   na.omit() %>% 
   mutate(null = length - (article + certain + conj + discrep + excl + i + incl + 
                             ipron + negate + preps + quant + tentat + we + you ))
-
-
 
 # No more negative nulls!
 # together_present %>% 
@@ -338,30 +349,56 @@ together_present <- together_present %>%
 #                           TRUE ~ 0)) %>% 
 #   ungroup()
 
-lag_together_present <- together_present %>%
-  select(subject, session, person, article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
+# Compute proportion for each category within utterance 
+prop_together_present <- together_present %>% 
+  arrange(run) %>% 
+  select(subject, session, person, run, article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
          quant, tentat, we, you, length, null) %>%
+  ungroup() %>% 
+  mutate_at(vars("article", "certain", 'conj', "discrep", "excl", "i", "incl", "ipron", "negate", "preps", "quant", "tentat",
+                 "we","you", "null"),
+            function(x) x/.$length) %>% 
   mutate(lag_article = lag(article), lag_certain = lag(certain),
          lag_conj = lag(conj), lag_discrep = lag(discrep), lag_excl = lag(excl),
          lag_i = lag(i), lag_incl = lag(incl), lag_ipron = lag(ipron),
          lag_negate = lag(negate), lag_preps = lag(preps), lag_quant = lag(quant),
-         lag_tentat = lag(tentat), lag_we = lag(we), lag_you = lag(you)) %>%
-  na.omit() %>% 
-  group_by(subject, session, person, lag_article, lag_certain, lag_conj, lag_discrep,
-           lag_excl,
-           lag_i,
-           lag_incl,
-           lag_ipron,
-           lag_negate,
-           lag_preps,
-           lag_quant,
-           lag_tentat,
-           lag_we,
-           lag_you) %>%
-  summarise_at(vars(article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
-         quant, tentat, we, you, null), sum)
+         lag_tentat = lag(tentat), lag_we = lag(we), lag_you = lag(you),
+         lag_null = lag(null)) %>%
+  na.omit()
 
-write_feather(lag_together_present, 'data/RECOUNT_together_present.feather')
+write_feather(prop_together_present, 'data/prop_together_present.feather')
+
+## SANITY CHECK - No props over 1!
+# prop_together_present %>% 
+#   select(-subject, -session, -person, -run, -length) %>% 
+#   filter_all(any_vars(.>1))
+
+
+## OLD VERSION - COMPUTES LAG COUNTS AND GROUPS BY UTTERANCE
+# lag_together_present <- together_present %>%
+#   select(subject, session, person, article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
+#          quant, tentat, we, you, length, null) %>%
+#   mutate(lag_article = lag(article), lag_certain = lag(certain),
+#          lag_conj = lag(conj), lag_discrep = lag(discrep), lag_excl = lag(excl),
+#          lag_i = lag(i), lag_incl = lag(incl), lag_ipron = lag(ipron),
+#          lag_negate = lag(negate), lag_preps = lag(preps), lag_quant = lag(quant),
+#          lag_tentat = lag(tentat), lag_we = lag(we), lag_you = lag(you)) %>%
+#   na.omit() %>% 
+#   group_by(subject, session, person, lag_article, lag_certain, lag_conj, lag_discrep,
+#            lag_excl,
+#            lag_i,
+#            lag_incl,
+#            lag_ipron,
+#            lag_negate,
+#            lag_preps,
+#            lag_quant,
+#            lag_tentat,
+#            lag_we,
+#            lag_you) %>%
+#   summarise_at(vars(article, certain, conj, discrep, excl, i, incl, ipron, negate, preps,
+#          quant, tentat, we, you, null), sum)
+
+# write_feather(lag_together_present, 'data/RECOUNT_together_present.feather')
 ```
 
 

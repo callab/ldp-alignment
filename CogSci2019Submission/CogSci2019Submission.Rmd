@@ -179,7 +179,7 @@ momed <- demos %>%
 ## Data and Methodology
 Conversations between parents and their children were drawn from the Language Development Project Corpus [@GoldinMeadow:2014hr]. Participants in the project were videorecorded in their homes for $\sim$ 90 minutes every four months starting when the child was 14-months and ending at 58-months. Participants were selected in order to produce a diverse sample demographically representative of the broader Chicagoland area. 
 
-We selected for analysis all children who were typically developing and completed at least 10 of the 12 planned recording sessions. Our sample consisted of `r nrow(demos)` target children, `r girls` of whom were girls, `r black` were Black and `r mixed` were Multiracial. Children were also socio-economically diverse, as measured by mother's education: `r momed %>% slice(1) %>% pull(n)` mothers had some highschool education, `r momed %>% slice(2) %>% pull(n)` had a highschool degree, `r momed %>% slice(3) %>% pull(n)` had some college or trade school, `r momed %>% slice(4) %>% pull(n)` had a highschool degree or GED, `r momed %>% slice(4) %>% pull(n)` had college degrees, and `r momed %>% slice(5) %>% pull(n)` had advanced degrees.
+We selected for analysis all children who were typically developing and completed at least 10 of the 12 planned recording sessions. Our sample consisted of `r nrow(demos)` target children, `r girls` of whom were girls, `r black` were Black and `r mixed` were Multiracial. Children were also socio-economically diverse, as measured by mother's education: `r momed %>% slice(1) %>% pull(n)` mothers had some highschool education, `r momed %>% slice(2) %>% pull(n)` had a highschool degree, `r momed %>% slice(3) %>% pull(n)` had some college or trade school, `r momed %>% slice(4) %>% pull(n)` had college degrees, and `r momed %>% slice(5) %>% pull(n)` had advanced degrees.
 
 Following @Anonymous:r2JoRscQ, successive utterances from a speaker within a transcript were concatenated into a single utterance. Individual utterances were then transformed into binary vectors with indices indicating the presence or absence of each of the 14 LIWC categories. This pre-processing turned every transcript into a speaker-reply format: each utterance within a transcript was both a reply to the preceding utterance and a message to the next one. 
   
@@ -311,6 +311,17 @@ ggplot(plot_parameters, aes(x = person, y = mean, fill= person,
        axis.title.x=element_text(vjust=-.5), axis.title.y=element_text(vjust=1))
 ```
 
+```{r, eval=F}
+demotable <- plot_parameters %>%
+  arrange(parameter) %>%
+  mutate(StandardError = (ci_upper-ci_lower)/2,
+         Estimate = mean) %>%
+  select(person, parameter,Estimate, StandardError) %>%
+  xtable::xtable(., digits=2,caption = 'Parameter Estimates for Alignment with standard errors.')
+
+print(demotable, type="latex", comment = F, table.placement = "H", include.rownames = FALSE, sanitize.text.function = function(x){x})
+```
+
 The mean estimates for PPVT predictors are presented in Figure 2. PPVT is positively associated with the age of the child and their being female. Moreover, female children tend to have a decreased age effect on PPVT; this means that for female children, the expected increase in PPVT over time is smaller. Mother's education is negatively associated with PPVT, but has a slight positive age effect. Alongside these demographic effects, we see robust alignment effects on PPVT: child and parental alignment are both associated with increased PPVT, but with decreased age effects.
   
 ```{r coefficients xtable, results = 'asis', eval = F}
@@ -323,21 +334,22 @@ ppvt_parameters %>%
   mutate(parameter = replace(parameter, parameter == 'ppvt_education', "ppvt_mother_ed")) %>% 
   arrange(parameter) %>% 
   mutate(parameter = ppvt_coefficients) %>% 
-  mutate(Estimate = mean) %>% 
-  select(parameter,Estimate) %>% 
+  mutate(Estimate = mean,
+         StandardError = (ci_upper-ci_lower)/2) %>% 
+  select(parameter,Estimate, StandardError) %>% 
   slice(match(order, parameter)) %>%
   xtable::xtable(., digits=2,caption = 'Parameter Estimates for PPVT predictors with standard errors.') %>% 
-  print(., type="latex", comment = F, table.placement = "H", sanitize.text.function = function(x){x})
+  print(., type="latex", comment = F, table.placement = "H", include.rownames=FALSE, sanitize.text.function = function(x){x})
 
-# demotable <- demoparameters %>% 
-#   mutate(measure = replace(measure, measure == 'ppvt_education', "ppvt_mother_ed")) %>% 
-#   arrange(measure) %>% 
-#   mutate(StandardError = (se_upper-se_lower)/2,
-#          Estimate = mean) %>% 
-#   select(measure,Estimate, StandardError) %>% 
+# demotable <- ppvt_parameters %>%
+#   mutate(parameter = replace(parameter, parameter == 'ppvt_education', "ppvt_mother_ed")) %>%
+#   arrange(parameter) %>%
+#   mutate(StandardError = (ci_upper-ci_lower)/2,
+#          Estimate = mean) %>%
+#   select(parameter,Estimate, StandardError) %>%
 #   xtable::xtable(., digits=2,caption = 'Parameter Estimates for PPVT predictors with standard errors.')
 # 
-# print(demotable, type="latex", comment = F, table.placement = "H", sanitize.text.function = function(x){x})
+# print(demotable, type="latex", comment = F, table.placement = "H", include.rownames = FALSE,sanitize.text.function = function(x){x})
 ```
 
 ```{r demopar_plot, fig.width=3.5, fig.height=2.25, set.cap.width=T, num.cols.cap=1, cache = T, fig.cap = "Posterior parameter estimates for demographic effects on PPVT scores. Points indicate means, error-bars indicate 95\\% highest posterior density intervals."}

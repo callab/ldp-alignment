@@ -54,11 +54,11 @@ liwc %>%
 
 ```{r Load Data}
 old_together_present <- read_feather('data/together_present.feather')
-together_present<- read_feather('data/RECOUNT_together_present.feather')
+together_present<- read_feather('data/prop_together_present.feather')
 
 # for vectorized stan model
-together_present <- together_present %>% 
-  mutate(lag_null = 0)
+# together_present <- together_present %>%
+#   mutate(lag_null = 0)
 ```
 
 ```{r Check Representation of Each Subject}
@@ -76,6 +76,11 @@ model_subjs <- together_present %>%
 
 model_together_present <- together_present %>% 
   filter(subject %in% model_subjs)
+```
+
+
+```{r New Model Idea}
+
 ```
 
 ```{r Filtering / Preparing Data for Stan Model - SPLIT BY SUBJECT}
