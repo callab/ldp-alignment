@@ -53,13 +53,273 @@ liwc %>%
 ```
 
 ```{r Load Data}
-old_together_present <- read_feather('data/together_present.feather')
+# old_together_present <- read_feather('data/together_present.feather')
 together_present<- read_feather('data/prop_together_present.feather')
 
 # for vectorized stan model
 # together_present <- together_present %>%
 #   mutate(lag_null = 0)
+
+source("read_ldp.R")
+
+MIN_VISITS <- 5
+
+Mode <- function(x) {
+  x <- x[!is.na(x)]
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+#### Load and Clean Data
+# Read in LDP data
+ldp <- connect_to_ldp()
+
+# subject demographics
+demos <- get_table(ldp, "subjects") %>%
+        filter(lesion == "") %>%
+        select(id, sex, race, ethn) %>%
+        collect()
+
+# visits information and more subject demographics
+visits <- get_table(ldp, "home_visits") %>%
+  distinct(id, age_years, subject, visit_type, completed, income_category, 
+           mother_education) %>%
+  collect() %>%
+  filter(visit_type != "SB5") %>%
+  mutate(visit_type = as.numeric(gsub("[^0-9]", "", visit_type))) %>%
+  rename(visit = visit_type) %>%
+  mutate(completed = as.logical(completed),
+         income_category = as.numeric(income_category))
+
+subjs <- visits %>%
+  group_by(subject) %>%
+  summarise(completed = sum(completed),
+            income_category = Mode(income_category),
+            mother_education = Mode(mother_education)) %>%
+  filter(completed >= 5) %>%
+  select(-completed) %>%
+  right_join(demos, by = c("subject" = "id"))
+
+session_ages <- visits %>%
+        filter(subject %in% subjs$subject, completed) %>%
+        select(subject, visit, age_years) %>%
+        rename(age = age_years) %>%
+        arrange(subject, visit)
+
+ppvt <- get_table(ldp, "ppvt") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(ppvt = ppvt_raw) %>%
+  select(subject, visit, age_years, ppvt)
+  
+cdi_ws <- get_table(ldp, "cdi_words_and_sentences") %>%
+  select(id, visit, cdis_1a1_num, cdis_2e_num) %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(cdi_ws = cdis_1a1_num, sent_comp = cdis_2e_num) %>%
+  select(subject, visit, age_years, cdi_ws, sent_comp) %>%
+  arrange(subject, visit)
+
+syntax <- get_table(ldp, "syntax") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(syntax = syntax_raw) %>%
+  select(subject, visit, age_years, syntax) %>% 
+  arrange(subject, visit)
+
+wppsi <- get_table(ldp, "wppsi_block_design") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  arrange(subject, visit) %>%
+  filter(!is.na(wppsi_block_raw)) %>%
+  select(subject, visit, age_years, wppsi_block_raw) %>%
+  rename(wppsi_block = wppsi_block_raw)
+
+measures <- full_join(ppvt, cdi_ws, by = c("subject", "visit", "age_years")) %>%
+  full_join(syntax, by = c("subject", "visit", "age_years")) %>%
+  full_join(wppsi, by = c("subject", "visit", "age_years")) %>%
+  gather(measure, value, ppvt, cdi_ws, sent_comp, syntax, wppsi_block) %>%
+  filter(!is.na(value)) %>%
+  arrange(subject, measure, visit) %>%
+  mutate(person = "child")
+
+subjs_over_10 <- together_present %>%
+  select(subject,session) %>%
+  distinct() %>%
+  group_by(subject) %>%
+  summarise(n=n()) %>%
+  filter(n>=10) %>%
+  pull(subject)
 ```
+
+```{r}
+together_present_demos <- together_present %>%
+  left_join(subjs, by = 'subject') %>%
+  left_join(ppvt, by= 'subject') %>%
+  na.omit() %>%
+  mutate(female = as.numeric(sex == 'F'),
+         male = as.numeric(sex == 'M'),
+         white = as.numeric(sex == 'WH'),
+         black = as.numeric(sex == 'BL'),
+         multi = as.numeric(sex == '2+'),
+         income_category = income_category - 1)
+
+
+# treat mother_ed as ordinal variable
+conversion = c("Some High School"=0, "High School or GED"=1, "Some College or Trade School"=2, "Bachelor's Degree"=3, "Advanced Degree"=4)
+together_present_demos$mother_education = conversion[together_present_demos$mother_education]
+
+```
+
+```{r Filtering for Prop Stan model}
+chosen_subject <- c(39)
+
+together_present <- together_present_demos %>%
+  ungroup() %>%
+  filter(subject %in%subjs_over_10) %>%
+  filter(subject %in% chosen_subject) %>% ## IF ONLY SAMPLING FOR ONE SUBJECT
+  mutate(uid = paste0(subject, "_", person)) %>%
+  mutate(uid = as.numeric(as.factor(uid))) %>%
+  mutate(parentid = case_when(person == 'Parent' ~ uid,
+                              TRUE ~ uid + 1),
+         childid = case_when(person == 'Child' ~ uid,
+                             TRUE ~ uid - 1))
+
+ppvt_model_data <- together_present %>% 
+  select(childid, parentid, ppvt, age_years, mother_education, female) %>% 
+  distinct() 
+
+small_together_present <- together_present %>% 
+  select(-length, -null, -lag_null, -visit, -age_years, -ppvt, -parentid, -childid) %>% 
+  distinct()
+
+emp_logit <- function(x, eps){
+  x <- log((eps + x)/(1 - x + eps))
+}
+# LOGIT TRANSFORM OF PROPORTION DATA
+
+current_prop <- small_together_present %>% 
+  select(article, certain, conj, discrep, excl, i,incl, ipron, negate, preps, quant, tentat, we, you) %>% 
+  as.matrix() %>%
+  emp_logit(.,1e-5)
+
+lag_prop <- small_together_present %>% 
+  select(lag_article, lag_certain, lag_conj, lag_discrep, lag_excl, lag_i,lag_incl, 
+         lag_ipron, lag_negate, lag_preps, lag_quant, lag_tentat, lag_we, lag_you) %>% 
+  as.matrix() %>% 
+  emp_logit(.,1e-5)
+
+  
+NumMarkers <- length(unique(liwc$category))
+MidAge <- median(unique(together_present$session))
+NumSubPops <- length(unique(small_together_present$person))
+NumObservations <- dim(small_together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(small_together_present$person)) # Child - 1, Parent - 2
+SpeakerAge <- small_together_present$session
+NumSpeakers <- length(unique(small_together_present$uid))
+NumSex <- length(unique(small_together_present$sex))
+NumMomEd <- length(unique(small_together_present$mother_education))
+SpeakerSubPop <- small_together_present %>% 
+  distinct(person, uid) %>%
+  mutate(subpop =  as.numeric(as.factor(person))) %>%
+  pull(subpop) # Child - 1; Parent - 2
+SpeakerMomEd <- small_together_present %>% 
+  mutate(mother_education = mother_education+1) %>% 
+  distinct(uid, mother_education) %>%
+  pull(mother_education)
+SpeakerSex <- small_together_present %>% 
+  distinct(uid, sex) %>%
+  mutate(sex =  as.numeric(as.factor(sex))) %>%
+  pull(sex) # Female - 1; Male - 2
+SpeakerId <-small_together_present$uid
+SpeakerAge <- small_together_present$session
+mother_education <- small_together_present$mother_education
+female <- small_together_present$female
+
+ppvt_vals <- ppvt_model_data$ppvt
+NumPPVT <- dim(ppvt_model_data)[1]
+age_years <- ppvt_model_data$age_years
+mother_education_ppvt_data <- ppvt_model_data$mother_education
+female_ppvt_data <- ppvt_model_data$female
+parentid <- ppvt_model_data$parentid
+childid <- ppvt_model_data$childid
+StdDev <- .25
+
+
+fit <- stan('stan_models/alignment_props.stan', chains = 1, iter = 50)
+divergent <- get_sampler_params(fit, inc_warmup=FALSE)[[1]][,'divergent__']
+
+
+
+
+```
+
+```{r Extract Stan Fit info}
+SE_UPPER <- .84
+SE_LOWER <- .16
+
+pars <- names(fit) %>%
+  as_data_frame() %>%
+  filter(!str_detect(value, "Marker"), 
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab"),
+          !str_detect(value, "lp__")) %>%
+  pull()
+
+parameter_cis <- rstan::extract(fit, pars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER)) %>%
+  ungroup() %>% 
+  mutate(measure = gsub("eta_ab","eta-ab", measure)) %>%
+  separate(measure, into = c("parameter", "type") , sep = "_", 
+           extra = "merge") %>%
+  mutate(id = gsub("[^0-9]*","", str_extract(type, "\\[[^()]+\\]")),
+         type = gsub("\\[[^()]+\\]", "", type),
+         type = factor(type, levels = c("pop", "subpop", "speaker")),
+         id = case_when(
+           is.na(id) ~ "pop",
+           type == "subpop" & id == 1 ~ "child",
+           type == "subpop" & id == 2 ~ "parent",
+           T ~ id)
+         ) %>%
+  left_join(distinct(small_together_present, subject, uid, person) %>% 
+              mutate(uid = as.character(uid)), by = c("id" = "uid")) %>%
+  arrange(type, parameter) %>%
+  mutate(id = if_else(is.na(subject), id, as.character(subject))) %>%
+  select(-subject)
+
+demopars <- names(fit) %>%
+  as_data_frame() %>%
+  filter(str_detect(value, "mu") | str_detect(value, 'ppvt') | str_detect(value, 'sigma'),
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab")) %>%
+  pull()
+
+demoparameters <- rstan::extract(fit, demopars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER))
+```
+
 
 ```{r Check Representation of Each Subject}
 together_present %>% 
@@ -78,10 +338,6 @@ model_together_present <- together_present %>%
   filter(subject %in% model_subjs)
 ```
 
-
-```{r New Model Idea}
-
-```
 
 ```{r Filtering / Preparing Data for Stan Model - SPLIT BY SUBJECT}
 chosen_subject <- model_subjs[4]

@@ -14,8 +14,14 @@ data {
   int<lower=0> SpeakerSex[NumSpeakers];
   int<lower=0> SpeakerMomEd[NumSpeakers];
   int<lower=0> SpeakerAge[NumObservations];          //Group number for each observation
-  int<lower=0> MarkerType[NumObservations];             //Marker number for each observation
   int<lower=0> SpeakerId[NumObservations];
+
+  int<lower=0> mother_education[NumObservations];// mother's ed marker for utterance
+  int<lower=0> female[NumObservations]; // female marker for utterance
+
+  real current_prop[NumObservations,NumMarkers]; //LOGIT TRANSFORMED proportions for current utterance
+  real lag_prop[NumObservations,NumMarkers]; //LOGIT TRANSFORMED proportions for lagging utterance
+
   // int<lower=0> NumUtterancesAB[NumObservations];        //Number of times the first message didn't contain the marker
   // int<lower=0> NumUtterancesNotAB[NumObservations];     //Number of times the first message did contain the marker
   // int<lower=0> CountsAB[NumObservations];               //Number of times the first message didn't contain the marker but the reply did
@@ -23,15 +29,18 @@ data {
   real<lower=0> StdDev;                                 //SD for each normal dist in the hierarchy (sole free parameter)
 
 
-  real<lower=0>ppvt_vals[NumObservations];
+  int<lower=0> NumPPVT; // number of ppvt scores
+  real<lower=0>ppvt_vals[NumPPVT];
   // real ppvt_slopes[NumObservations];
-  real<lower=0> age_years[NumObservations];
+  real<lower=0> age_years[NumPPVT];
   // vector<lower=0>[NumObservations] income_category;
-  int<lower=0> mother_education[NumObservations];
-  int<lower=0> female[NumObservations];
 
-  int<lower=0>parentid[NumObservations]; //for every utterance, the speakerid for the parent
-  int<lower=0>childid[NumObservations]; // for every utterance, the speakerid for the child
+  int<lower=0> mother_education_ppvt_data[NumPPVT]; // mother's ed for ppvt scores
+  int<lower=0> female_ppvt_data[NumPPVT]; //female marker for ppvt scores
+
+
+  int<lower=0>parentid[NumPPVT]; //for every ppvt score, the speakerid for the parent
+  int<lower=0>childid[NumPPVT]; // for every ppvt score, the speakerid for the child
 }
 
 parameters {
@@ -61,11 +70,13 @@ parameters {
   vector[NumMarkers] eta_speaker_Marker[NumSpeakers];            //lin. pred. for each marker+group baseline
   vector[NumMarkers] eta_ab_speaker_Marker[NumSpeakers];         //lin. pred. for each marker+group alignment
 
-  vector[NumObservations] eta_observation;              //lin. pred. for each marker+dyad baseline
-  vector[NumObservations] eta_ab_observation;           //lin. pred. for each marker+dyad alignment
+  real eta_observation [NumObservations, NumMarkers];              //lin. pred. for each marker+dyad baseline
+  real eta_ab_observation [NumObservations, NumMarkers];           //lin. pred. for each marker+dyad alignment
 
   real<lower=0> sigma; //error term for ppvt linear regression
   real ppvt_intercept; //intercept term for ppvt linear regression
+
+  real<lower=0> prop_sigma; //error term for prop linear regression
 
   // demographics coefficients for mu - change in baseline; estimated for each subpop
   // real mu_income; 
@@ -150,38 +161,45 @@ model {
 
   //marker-dyad level distributions
   for(Observation in 1:NumObservations) {
-    eta_observation[Observation] ~ normal(eta_speaker_Marker[SpeakerId[Observation], MarkerType[Observation]], StdDev);
-    eta_ab_observation[Observation] ~ normal(eta_ab_speaker_Marker[SpeakerId[Observation], MarkerType[Observation]], StdDev);
+    for (Marker in 1:NumMarkers){
+      eta_observation[Observation, Marker] ~ normal(eta_speaker_Marker[SpeakerSubPop[SpeakerId[Observation]], Marker], StdDev);
+      eta_ab_observation[Observation, Marker] ~ normal(eta_ab_speaker_Marker[SpeakerSubPop[SpeakerId[Observation]], Marker], StdDev);
+    }
   }
 
   // ADD PARAMETERS ABOVE FROM HERE
   // need to enforce normalization for current_prop draw?
 
+  // try sigmoid instead of linear for alignment by age?
+
+
+
   // Marker-level proportion draw for every utterance
+
+  // predict props in logit space (real values); no prediction for null
   for (Observation in 1:NumObservations) {
     for (Marker in 1:NumMarkers){
       current_prop[Observation, Marker] ~ normal(eta_observation[Observation, Marker] + 
         (alpha_speaker[SpeakerId[Observation]] * (SpeakerAge[Observation] - MidAge)) + 
         (eta_ab_observation[Observation, Marker] * lag_prop[Observation, Marker]) +
-        (beta_speaker[SpeakerId[Observation] * (SpeakerAge[Observation] - MidAge)), sigma)
-    } 
-    // Proportion draw for null marker (no alignment)
-    current_prop[Observation, NumMarkers+1] ~ normal(eta_observation[Observation, NumMarkers+1] + 
-      (beta_speaker[SpeakerId[Observation] * (SpeakerAge[Observation] - MidAge)), sigma)
+        (beta_speaker[SpeakerId[Observation]] * (SpeakerAge[Observation] - MidAge)), prop_sigma);
+    }
   }
 
+
+  // need to do factor analysis on all available outcome measures to create robust language development measure
   // predict ppvt and slope using demos AND parent and child alignment estimate
-  for (Observation in 1:NumObservations){
-    ppvt_vals[Observation] ~ normal(ppvt_intercept + 
-      (age_years[Observation] * ppvt_age_years) + 
-      (mother_education[Observation] * ppvt_education)+ 
-      (female[Observation] * ppvt_female) +
-      (eta_ab_speaker[childid[Observation]] * ppvt_child_align) + 
-      (eta_ab_speaker[parentid[Observation]] * ppvt_parent_align) + 
-      (eta_ab_speaker[childid[Observation]] * age_years[Observation] * ppvt_child_align_slope) + 
-      (eta_ab_speaker[parentid[Observation]] * age_years[Observation] * ppvt_parent_align_slope) +
-      (mother_education[Observation] * age_years[Observation] * ppvt_mother_ed_slope)+
-      (female[Observation] * age_years[Observation] * ppvt_female_slope)
+  for (PPVT in 1:NumPPVT){
+    ppvt_vals[PPVT] ~ normal(ppvt_intercept + 
+      (age_years[PPVT] * ppvt_age_years) + 
+      (mother_education_ppvt_data[PPVT] * ppvt_education)+ 
+      (female_ppvt_data[PPVT] * ppvt_female) +
+      (eta_ab_speaker[childid[PPVT]] * ppvt_child_align) + 
+      (eta_ab_speaker[parentid[PPVT]] * ppvt_parent_align) + 
+      (eta_ab_speaker[childid[PPVT]] * age_years[PPVT] * ppvt_child_align_slope) + 
+      (eta_ab_speaker[parentid[PPVT]] * age_years[PPVT] * ppvt_parent_align_slope) +
+      (mother_education_ppvt_data[PPVT] * age_years[PPVT] * ppvt_mother_ed_slope)+
+      (female_ppvt_data[PPVT] * age_years[PPVT] * ppvt_female_slope)
       , sigma);
   }
   

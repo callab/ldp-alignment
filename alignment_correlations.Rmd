@@ -186,12 +186,12 @@ old_stats %>%
 
 # raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
 # 
-# subjs_over_10 <- raw_long_present %>% 
-#   select(subject,session) %>% 
-#   distinct() %>% 
-#   group_by(subject) %>% 
-#   summarise(n=n()) %>% 
-#   filter(n>=10) %>% 
+# subjs_over_10 <- raw_long_present %>%
+#   select(subject,session) %>%
+#   distinct() %>%
+#   group_by(subject) %>%
+#   summarise(n=n()) %>%
+#   filter(n>=10) %>%
 #   pull(subject)
 # 
 # long_present <- raw_long_present %>% 
@@ -211,10 +211,10 @@ old_stats %>%
 #     select(-notBA, - notBnotA)
 # 
 # # Join demographic info and ppvt onto utterance data; convert categorical info to binary
-# long_present_demos <- long_present %>% 
-#   left_join(subjs, by = 'subject') %>% 
-#   left_join(ppvt, by= 'subject') %>% 
-#   na.omit() %>% 
+# long_present_demos <- long_present %>%
+#   left_join(subjs, by = 'subject') %>%
+#   left_join(ppvt, by= 'subject') %>%
+#   na.omit() %>%
 #   mutate(female = as.numeric(sex == 'F'),
 #          male = as.numeric(sex == 'M'),
 #          white = as.numeric(sex == 'WH'),
@@ -222,11 +222,11 @@ old_stats %>%
 #          multi = as.numeric(sex == '2+'),
 #          income_category = income_category - 1)
 # 
-# long_present_demos %>% 
-#   ungroup() %>% 
+# long_present_demos %>%
+#   ungroup() %>%
 #   select(subject, mother_education) %>%
-#   distinct() %>% 
-#   group_by(mother_education) %>% 
+#   distinct() %>%
+#   group_by(mother_education) %>%
 #   summarise(n=n())
 # 
 # # treat mother_ed as ordinal variable
@@ -238,9 +238,9 @@ old_stats %>%
 # 
 # long_present <- long_present_demos %>%
 #   ungroup() %>%
-#   filter(subject %in%subjs_over_10) %>% 
+#   filter(subject %in%subjs_over_10) %>%
 #   mutate(uid = paste0(subject, "_", person)) %>%
-#   mutate(uid = as.numeric(as.factor(uid))) %>% 
+#   mutate(uid = as.numeric(as.factor(uid))) %>%
 #   mutate(parentid = case_when(person == 'Parent' ~ uid,
 #                               TRUE ~ uid + 1),
 #          childid = case_when(person == 'Child' ~ uid,
@@ -379,14 +379,14 @@ demoparameters <- extract(fit_hierarchical, demopars) %>%
             se_lower = quantile(value,SE_LOWER))
   
 
-pars <- names(fit_hierarchical) %>%
-  as_data_frame() %>%
-  filter(!str_detect(value, "Marker"), 
-         !str_detect(value, "observation"),
-         !str_detect(value, "mu_ab"),
-         !str_detect(value, "mu_notab"),
-          !str_detect(value, "lp__")) %>%
-  pull()
+  pars <- names(fit_hierarchical) %>%
+    as_data_frame() %>%
+    filter(!str_detect(value, "Marker"), 
+           !str_detect(value, "observation"),
+           !str_detect(value, "mu_ab"),
+           !str_detect(value, "mu_notab"),
+            !str_detect(value, "lp__")) %>%
+    pull()
 
 demo_abs <- names(fit_hierarchical) %>% 
   as_data_frame() %>% 
@@ -400,7 +400,7 @@ demo_ab_parameters <- extract(fit_hierarchical, demo_abs) %>%
   summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
             se_lower = quantile(value,SE_LOWER))
 
-parameter_cis <- extract(fit_hierarchical, pars) %>%
+parameter_cis <- rstan::extract(fit_hierarchical, pars) %>%
   bind_rows(.id = "sample") %>%
   gather(measure, value, -sample) %>%
   group_by(measure) %>%
