@@ -44,17 +44,11 @@ liwc %>%
   distinct(word, category) %>%
   group_by(category) %>%
   summarise(n = n())
-
-  distinct(word, category) %>%
-  mutate(n=n()) %>% 
-  filter(n>1) %>% 
-  View()
-
 ```
 
 ```{r Load Data}
-# old_together_present <- read_feather('data/together_present.feather')
-together_present<- read_feather('data/prop_together_present.feather')
+ old_together_present <- read_feather('data/together_present.feather')
+#together_present<- read_feather('data/prop_together_present.feather')
 
 # for vectorized stan model
 # together_present <- together_present %>%
@@ -163,6 +157,47 @@ subjs_over_10 <- together_present %>%
   filter(n>=10) %>%
   pull(subject)
 ```
+
+```{r}
+# model <- measures %>%
+#   filter(measure == "ppvt") %>%
+#   #filter(!measure %in% c("wppsi_block", "sent_comp")) %>%
+#   group_by(measure) %>%
+#   mutate(value = scale(value)) %>%
+#   lmer(value ~ age_years + 
+#          (age_years | subject), 
+#        control = lmerControl(optCtrl = list( maxfun=20000),
+#                              optimizer = "bobyqa"), data = .)
+# 
+model_setup <- measures %>%
+  filter(!measure %in% c("wppsi_block", "sent_comp")) %>%
+  group_by(measure) %>%
+  mutate(value = scale(value)) %>%
+  ungroup() %>%
+  mutate(measure = factor(measure))
+
+contrasts(model_setup$measure) <- contr.sum(3)
+
+model <- lmer(value ~ measure * age_years +
+         (age_years + measure | subject),
+       control = lmerControl(optCtrl = list( maxfun=20000),
+                             optimizer = "bobyqa"), data = model_setup)
+
+subj_effects <- ranef(model)$subject %>% 
+  rownames_to_column("subj") %>%
+  data.frame() %>%
+  as_tibble() %>%
+  rename(intercept = `X.Intercept.`, slope = age_years) %>%
+  select(subj, intercept, slope)
+
+write_csv(subj_effects, "subjs_effects_sum.csv")
+```
+
+```{r}
+fit <- readRDS("CogSci2019Submission/data/hierppvt1000iters.rds")
+
+```
+
 
 ```{r}
 together_present_demos <- together_present %>%
