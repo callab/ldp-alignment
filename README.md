@@ -1,20 +1,7 @@
 # ldp-alignment
 
-## Instructions for Downloading Data
-We use [dat](https://datproject.org/) to host our data. In order to download data used, follow these instructions.
+Currently the data is only accessible via a secure connection to UChicago's network. Please submit any inquiries to the authors at jgdenby@uchicago.edu
 
-First, install dat:
-```{bash}
-npm install -g dat
-```
+Data pre-processing contained within `read_ldp_sql.Rmd`
 
-Next, clone this repository and navigate to the `data/` folder.
-```{bash}
-git clone https://github.com/callab/ldp-alignment.git
-cd data/
-```
-
-Finally, use dat to download the data using the address contained within the `.json` file. This step requires a P2P connection, so ensure another machine is syncing to the same dat address.  
-```{bash}
-dat clone dat.json
-```
+Analysis via Stan and extraction contained within `alignment_correlations.Rmd`
