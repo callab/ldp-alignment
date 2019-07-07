@@ -24,240 +24,8 @@ library(rstan)
 
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
-```
 
-```{r Load Fit Stats}
-fit_stats <- read_feather("results/together_fit_stats.feather")
-old_model_stats <- read_feather("stanfits/oldmodel_cis.feather")
-```
-
-```{r ldp_functions}
-source("read_ldp.R")
-```
-
-```{r, eval=T, message=FALSE}
-MIN_VISITS <- 5
-
-Mode <- function(x) {
-  x <- x[!is.na(x)]
-  ux <- unique(x)
-  ux[which.max(tabulate(match(x, ux)))]
-}
-
-#### Load and Clean Data
-# Read in LDP data
-ldp <- connect_to_ldp()
-
-# subject demographics
-demos <- get_table(ldp, "subjects") %>%
-        filter(lesion == "") %>%
-        select(id, sex, race, ethn) %>%
-        collect()
-
-# visits information and more subject demographics
-visits <- get_table(ldp, "home_visits") %>%
-  distinct(id, age_years, subject, visit_type, completed, income_category, 
-           mother_education) %>%
-  collect() %>%
-  filter(visit_type != "SB5") %>%
-  mutate(visit_type = as.numeric(gsub("[^0-9]", "", visit_type))) %>%
-  rename(visit = visit_type) %>%
-  mutate(completed = as.logical(completed),
-         income_category = as.numeric(income_category))
-
-subjs <- visits %>%
-  group_by(subject) %>%
-  summarise(completed = sum(completed),
-            income_category = Mode(income_category),
-            mother_education = Mode(mother_education)) %>%
-  filter(completed >= 5) %>%
-  select(-completed) %>%
-  right_join(demos, by = c("subject" = "id"))
-
-session_ages <- visits %>%
-        filter(subject %in% subjs$subject, completed) %>%
-        select(subject, visit, age_years) %>%
-        rename(age = age_years) %>%
-        arrange(subject, visit)
-```
-
-Get other measures
-```{r load_measures}
-# subject level ppvt info
-ppvt <- get_table(ldp, "ppvt") %>%
-  collect() %>%
-  select(-id) %>%
-  rename(id = visit) %>%
-  left_join(visits) %>%
-  filter(subject %in% subjs$subject) %>%
-  rename(ppvt = ppvt_raw) %>%
-  select(subject, visit, age_years, ppvt)
-  
-cdi_ws <- get_table(ldp, "cdi_words_and_sentences") %>%
-  select(id, visit, cdis_1a1_num, cdis_2e_num) %>%
-  collect() %>%
-  select(-id) %>%
-  rename(id = visit) %>%
-  left_join(visits) %>%
-  filter(subject %in% subjs$subject) %>%
-  rename(cdi_ws = cdis_1a1_num, sent_comp = cdis_2e_num) %>%
-  select(subject, visit, age_years, cdi_ws, sent_comp) %>%
-  arrange(subject, visit)
-
-syntax <- get_table(ldp, "syntax") %>%
-  collect() %>%
-  select(-id) %>%
-  rename(id = visit) %>%
-  left_join(visits) %>%
-  filter(subject %in% subjs$subject) %>%
-  rename(syntax = syntax_raw) %>%
-  select(subject, visit, age_years, syntax) %>% 
-  arrange(subject, visit)
-
-wppsi <- get_table(ldp, "wppsi_block_design") %>%
-  collect() %>%
-  select(-id) %>%
-  rename(id = visit) %>%
-  left_join(visits) %>%
-  filter(subject %in% subjs$subject) %>%
-  arrange(subject, visit) %>%
-  filter(!is.na(wppsi_block_raw)) %>%
-  select(subject, visit, age_years, wppsi_block_raw) %>%
-  rename(wppsi_block = wppsi_block_raw)
-
-measures <- full_join(ppvt, cdi_ws, by = c("subject", "visit", "age_years")) %>%
-  full_join(syntax, by = c("subject", "visit", "age_years")) %>%
-  full_join(wppsi, by = c("subject", "visit", "age_years")) %>%
-  gather(measure, value, ppvt, cdi_ws, sent_comp, syntax, wppsi_block) %>%
-  filter(!is.na(value)) %>%
-  arrange(subject, measure, visit) %>%
-  mutate(person = "child")
-
-```
-
-```{r correlate (avg subject) ppvt }
-avg_subj_ppvt <- measures %>% 
-  filter(measure == 'ppvt') %>%
-  ungroup() %>% 
-  group_by(subject) %>% 
-  summarise(value= mean(value)) %>% 
-  rename(ppvt = value)
-
-ppvt_fit_stats <- left_join(avg_subj_ppvt, fit_stats, by = c('subject'='subj')) %>% 
-  na.omit()
-
-# correlations
-ppvt_fit_stats %>% 
-  group_by(measure) %>% 
-  mutate(correlation = cor(ppvt,value)) %>% 
-  select(measure, correlation) %>% 
-  distinct()
-```
-
-```{r}
-fit_stats %>% 
-  group_by(measure) %>% 
-  summarise(value = mean(value))
-```
-
-```{r}
-avg_subj_measure <- measures %>% 
-  group_by(subject, measure) %>% 
-  summarise(value= mean(value)) 
-
-old_stats <- old_model_stats %>%
-  filter(type == "speaker") %>%
-  mutate(id = as.numeric(id)) %>%
-  left_join(avg_subj_measure, fit_stats, by = c("id" = "subject")) %>%
-  filter(!is.na(value))
-  
-old_stats %>% 
-  group_by(person, parameter, measure) %>% 
-  mutate(correlation = cor(value, mean)) %>% 
-  select(person, measure, parameter, correlation) %>% 
-  distinct() %>%
-  arrange(person, measure, parameter) %>%
-  View()
-
-```
-
-
-```{r Old Fit with Demos and PPVT}
-
-# raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
-# 
-# subjs_over_10 <- raw_long_present %>%
-#   select(subject,session) %>%
-#   distinct() %>%
-#   group_by(subject) %>%
-#   summarise(n=n()) %>%
-#   filter(n>=10) %>%
-#   pull(subject)
-# 
-# long_present <- raw_long_present %>% 
-#   arrange(subject, session, category, run) %>%
-#   group_by(subject, session, category) %>%
-#   mutate(lag_count = lag(count)) %>%
-#   filter(!is.na(lag_count)) %>%
-#   group_by(subject, session, person, category) %>%
-#   mutate(BA = count > 0 & lag_count > 0,
-#          notBA = count == 0 & lag_count > 0,
-#          BnotA = count > 0 & lag_count == 0,
-#          notBnotA = count == 0 & lag_count == 0) %>%
-#   summarise_at(vars(BA,notBA,BnotA,notBnotA), sum) %>%
-#   mutate(NumUtterancesAB = BA +notBA, 
-#          NumUtterancesNotAB = BnotA + notBnotA) %>%
-#   rename(CountsAB = BA, CountsNotAB = BnotA) %>%
-#     select(-notBA, - notBnotA)
-# 
-# # Join demographic info and ppvt onto utterance data; convert categorical info to binary
-# long_present_demos <- long_present %>%
-#   left_join(subjs, by = 'subject') %>%
-#   left_join(ppvt, by= 'subject') %>%
-#   na.omit() %>%
-#   mutate(female = as.numeric(sex == 'F'),
-#          male = as.numeric(sex == 'M'),
-#          white = as.numeric(sex == 'WH'),
-#          black = as.numeric(sex == 'BL'),
-#          multi = as.numeric(sex == '2+'),
-#          income_category = income_category - 1)
-# 
-# long_present_demos %>%
-#   ungroup() %>%
-#   select(subject, mother_education) %>%
-#   distinct() %>%
-#   group_by(mother_education) %>%
-#   summarise(n=n())
-# 
-# # treat mother_ed as ordinal variable
-# conversion = c("Some High School"=0, "High School or GED"=1, "Some College or Trade School"=2, "Bachelor's Degree"=3, "Advanced Degree"=4)
-# long_present_demos$mother_education = conversion[long_present_demos$mother_education]
-# 
-# liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
-#   rename(word = X1, category = X2)
-# 
-# long_present <- long_present_demos %>%
-#   ungroup() %>%
-#   filter(subject %in%subjs_over_10) %>%
-#   mutate(uid = paste0(subject, "_", person)) %>%
-#   mutate(uid = as.numeric(as.factor(uid))) %>%
-#   mutate(parentid = case_when(person == 'Parent' ~ uid,
-#                               TRUE ~ uid + 1),
-#          childid = case_when(person == 'Child' ~ uid,
-#                              TRUE ~ uid - 1))
-#   
-# 
-# ppvt_slope_by_subject <- long_present %>% 
-#   group_by(subject) %>% 
-#   select(subject, ppvt, age_years) %>% 
-#   distinct() %>% 
-#   do(model = lm(ppvt~age_years, .)$coefficients[2][[1]]) %>% 
-#   mutate(model = replace_na(model,0))
-# 
-# long_present <- long_present %>% 
-#   left_join(ppvt_slope_by_subject, by = 'subject') 
-# 
-# write_feather(long_present, 'ppvt_with_demos.feather')
+setwd(here())
 ```
 
 ```{r Run Stan Model with PPVT}
@@ -265,6 +33,17 @@ long_present <- read_feather('data/ppvt_with_demos.feather')
 
 liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
   rename(word = X1, category = X2)
+
+# subj_effects <- read_csv('subjs_effects_sum.csv')
+
+# long_present <- long_present %>% 
+#   left_join(tt_mlu, by=c('subject','session','person'))
+# 
+# write_feather(long_present,'data/ppvt_with_demos.feather')
+
+# long_present <- long_present %>% 
+#   left_join(subj_effects, by=c('subject'='subj')) %>% 
+#   select(-age_years, -visit, -ppvt) 
 
 ## STAN DATA ##
 MidAge <- median(long_present$session)
@@ -274,6 +53,7 @@ NumSpeakers <- length(unique(long_present$uid))
 NumObservations <- dim(long_present)[1]
 NumSex <- length(unique(long_present$sex))
 NumMomEd <- length(unique(long_present$mother_education))
+NumAges <- length(unique(long_present$session))
 SpeakerSubPop <- long_present %>% 
   distinct(person, uid) %>%
   mutate(subpop =  as.numeric(as.factor(person))) %>%
@@ -298,6 +78,8 @@ StdDev <- .25
 parentid <- long_present$parentid
 childid <- long_present$childid
 ppvt_vals <- long_present$ppvt
+factor_intercepts <- long_present$intercept
+factor_slopes <- long_present$slope
 age_years <- long_present$age_years
 mother_education <- long_present$mother_education
 female <- long_present$female
@@ -305,100 +87,54 @@ female <- long_present$female
 # multi <- long_present$multi
 # income_category <- long_present$income_category
 # ppvt_slopes <- long_present$model
+mlu <- long_present$mlu
+types <- long_present$types
+tokens <- long_present$tokens
 ###############
+
+##############
+###SCALING####
+mlu <- as.vector(scale(mlu))
+types <- as.vector(scale(types))
+tokens <- as.vector(scale(tokens))
+age_years <- as.vector(scale(age_years))
+mother_education <- as.vector(scale(mother_education))
+##############
+
+# fit <- stan("stan_models/sessionalignment.stan",
+#             chains = 1,
+#             iter = 500)
+# saveRDS(fit, "sessionestimates.rds")
+# 
 
 fit <- stan("stan_models/alignmenthierarchicaldemos.stan",
             chains = 1,
             iter = 500)
 
-saveRDS(fit, "hierppvt500iters.rds")
+# saveRDS(fit, "hierppvt500iters.rds")
 
-divergent <- get_sampler_params(fit_hierarchical, inc_warmup=FALSE)[[1]][,'divergent__']
-
-# fit <- stan("stan_models/alignmentcompletelyhierarchical.stan",
-#             chains = 1,
-#             iter = 350)
-# saveRDS(fit, "demohier350iters.rds")
-# 
-# fit_hierarchical <- stan("stan_models/oldalignment_w_demos.stan", 
-#                          chains = 1, iter = 200)
-# 
-# saveRDS(fit_hierarchical, 'stanfits/oldmodeldemos_short.rds')
+divergent <- get_sampler_params(fit, inc_warmup=FALSE)[[1]][,'divergent__']
 ```
 
 ```{r fit extraction}
-raw_long_present <- read_feather('data/RECOUNT_long_present.feather')
-
-long_present <- raw_long_present %>% 
-  arrange(subject, session, category, run) %>%
-  group_by(subject, session, category) %>%
-  mutate(lag_count = lag(count)) %>%
-  filter(!is.na(lag_count)) %>%
-  group_by(subject, session, person, category) %>%
-  mutate(BA = count > 0 & lag_count > 0,
-         notBA = count == 0 & lag_count > 0,
-         BnotA = count > 0 & lag_count == 0,
-         notBnotA = count == 0 & lag_count == 0) %>%
-  summarise_at(vars(BA,notBA,BnotA,notBnotA), sum) %>%
-  mutate(NumUtterancesAB = BA +notBA, 
-         NumUtterancesNotAB = BnotA + notBnotA) %>%
-  rename(CountsAB = BA, CountsNotAB = BnotA) %>%
-    select(-notBA, - notBnotA)
-
-long_present <- long_present %>%
-  ungroup() %>%
-  mutate(uid = paste0(subject, "_", person)) %>%
-  mutate(uid = as.numeric(as.factor(uid)))
-  
-
-
-fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
-fit_hierarchical <- readRDS('newnewhierdemos200iters.rds')
-fit_hierarchical <- readRDS('hierppvt350iters.rds')
-fit_hierarchical <- fit
+# fit_hierarchical <- readRDS('stanfits/oldmodeldemos_short.rds')
+# fit_hierarchical <- readRDS('newnewhierdemos200iters.rds')
+# fit_hierarchical <- readRDS('hierppvt350iters.rds')
 fit_hierarchical <- readRDS('hierppvt500iters.rds')
 
 
 SE_UPPER <- .84
 SE_LOWER <- .16
 
-
-demopars <- names(fit_hierarchical) %>%
+# Define and extract all alignment-related parameters
+pars <- names(fit_hierarchical) %>%
   as_data_frame() %>%
-  filter(str_detect(value, "mu") | str_detect(value, 'ppvt') | str_detect(value, 'sigma'),
+  filter(!str_detect(value, "Marker"), 
          !str_detect(value, "observation"),
          !str_detect(value, "mu_ab"),
-         !str_detect(value, "mu_notab")) %>%
+         !str_detect(value, "mu_notab"),
+         !str_detect(value, "lp__")) %>%
   pull()
-
-demoparameters <- extract(fit_hierarchical, demopars) %>%
-  bind_rows(.id = "sample") %>%
-  gather(measure, value, -sample) %>%
-  group_by(measure) %>%
-  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
-            se_lower = quantile(value,SE_LOWER))
-  
-
-  pars <- names(fit_hierarchical) %>%
-    as_data_frame() %>%
-    filter(!str_detect(value, "Marker"), 
-           !str_detect(value, "observation"),
-           !str_detect(value, "mu_ab"),
-           !str_detect(value, "mu_notab"),
-            !str_detect(value, "lp__")) %>%
-    pull()
-
-demo_abs <- names(fit_hierarchical) %>% 
-  as_data_frame() %>% 
-  filter(str_detect(value, "mom") | str_detect(value, "gender")) %>% 
-  pull()
-
-demo_ab_parameters <- extract(fit_hierarchical, demo_abs) %>%
-  bind_rows(.id = "sample") %>%
-  gather(measure, value, -sample) %>%
-  group_by(measure) %>%
-  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
-            se_lower = quantile(value,SE_LOWER))
 
 parameter_cis <- rstan::extract(fit_hierarchical, pars) %>%
   bind_rows(.id = "sample") %>%
@@ -425,65 +161,20 @@ parameter_cis <- rstan::extract(fit_hierarchical, pars) %>%
   mutate(id = if_else(is.na(subject), id, as.character(subject))) %>%
   select(-subject)
 
-parameter_cis %>% 
-  filter(parameter == 'mom_ed')
+# Define and extract parameters related to PPVT prediction model
+demopars <- names(fit_hierarchical) %>%
+  as_data_frame() %>%
+  filter(str_detect(value, "mu") | str_detect(value, 'ppvt') | str_detect(value, 'sigma') | str_detect(value, 'factor'),
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab")) %>%
+  pull()
 
-avg_subj_measure <- measures %>% 
-  group_by(subject, measure) %>% 
-  summarise(value= mean(value)) 
+demoparameters <- extract(fit_hierarchical, demopars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER))
 
-old_stats <- old_model_stats %>%
-  filter(type == "speaker") %>%
-  mutate(id = as.numeric(id)) %>%
-  left_join(avg_subj_measure, fit_stats, by = c("id" = "subject")) %>%
-  filter(!is.na(value))
-
-new_old_stats <- parameter_cis %>%
-  filter(type == "speaker") %>%
-  mutate(id = as.numeric(id)) %>%
-  left_join(avg_subj_measure, fit_stats, by = c("id" = "subject")) %>%
-  filter(!is.na(value))
-  
-old_cors <- old_stats %>% 
-  group_by(person, parameter, measure) %>% 
-  mutate(correlation = cor(value, mean)) %>% 
-  select(person, measure, parameter, correlation) %>% 
-  distinct() %>%
-  arrange(person, measure, parameter) 
-
-new_old_cors <- new_old_stats %>% 
-  group_by(person, parameter, measure) %>% 
-  mutate(correlation = cor(value, mean)) %>% 
-  select(person, measure, parameter, correlation) %>% 
-  distinct() %>%
-  arrange(person, measure, parameter) 
-
-together_cors <- old_cors %>% 
-  left_join(new_old_cors, by = c('person', 'measure', 'parameter'), suffix = c(".nodemos",".demos"))
-
-write_csv(together_cors, 'together_cors.csv')
-```
-
-```{r plots}
-# Subpop plots
-parameter_cis %>% 
-  filter(type == 'subpop') %>% 
-  select(-person,-type) %>% 
-  mutate(estimate = mean) %>% 
-  ggplot(aes(x=id, y=estimate, fill = id))+ 
-  geom_bar(stat = 'identity', position = position_dodge()) +
-  geom_errorbar(aes(ymin=se_lower, ymax=se_upper), width = .2, position=position_dodge())+
-  guides(fill=FALSE)+
-  facet_wrap(~parameter)
-  
-```
-
-
-```{r}
-long_present %>%
-  group_by(age_years) %>%
-  summarise(ppvt = mean(ppvt)) %>%
-  ggplot(aes(x = age_years, y = ppvt)) +
-  geom_point() + 
-  geom_smooth()
 ```
