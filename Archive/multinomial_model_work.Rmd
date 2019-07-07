@@ -1,0 +1,703 @@
+---
+title: "multinomial_model_work"
+author: "Joseph Denby"
+date: "11/12/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(data.table)
+library(tidyverse)
+library(readr)
+library(stringr)
+library(DT)
+library(tidytext)
+library(RSQLite)
+library(feather)
+library(xlsx)
+library(rstan)
+library(magrittr)
+library(zoo)
+library(shinystan)
+
+opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+               error = FALSE, cache = TRUE, tidy = FALSE)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+
+```{r read_liwc}
+liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
+  rename(word = X1, category = X2)
+```
+
+```{r Double Counted LIWC Words}
+multi_liwcs <- liwc %>% 
+  group_by(word) %>%
+  summarise(n = n()) %>%
+  filter(n > 1)
+
+liwc %>%
+  filter(word %in% multi_liwcs$word) %>%
+  distinct(word, category) %>%
+  group_by(category) %>%
+  summarise(n = n())
+```
+
+```{r Load Data}
+ old_together_present <- read_feather('data/together_present.feather')
+#together_present<- read_feather('data/prop_together_present.feather')
+
+# for vectorized stan model
+# together_present <- together_present %>%
+#   mutate(lag_null = 0)
+
+source("read_ldp.R")
+
+MIN_VISITS <- 5
+
+Mode <- function(x) {
+  x <- x[!is.na(x)]
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+#### Load and Clean Data
+# Read in LDP data
+ldp <- connect_to_ldp()
+
+# subject demographics
+demos <- get_table(ldp, "subjects") %>%
+        filter(lesion == "") %>%
+        select(id, sex, race, ethn) %>%
+        collect()
+
+# visits information and more subject demographics
+visits <- get_table(ldp, "home_visits") %>%
+  distinct(id, age_years, subject, visit_type, completed, income_category, 
+           mother_education) %>%
+  collect() %>%
+  filter(visit_type != "SB5") %>%
+  mutate(visit_type = as.numeric(gsub("[^0-9]", "", visit_type))) %>%
+  rename(visit = visit_type) %>%
+  mutate(completed = as.logical(completed),
+         income_category = as.numeric(income_category))
+
+subjs <- visits %>%
+  group_by(subject) %>%
+  summarise(completed = sum(completed),
+            income_category = Mode(income_category),
+            mother_education = Mode(mother_education)) %>%
+  filter(completed >= 5) %>%
+  select(-completed) %>%
+  right_join(demos, by = c("subject" = "id"))
+
+session_ages <- visits %>%
+        filter(subject %in% subjs$subject, completed) %>%
+        select(subject, visit, age_years) %>%
+        rename(age = age_years) %>%
+        arrange(subject, visit)
+
+ppvt <- get_table(ldp, "ppvt") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(ppvt = ppvt_raw) %>%
+  select(subject, visit, age_years, ppvt)
+  
+cdi_ws <- get_table(ldp, "cdi_words_and_sentences") %>%
+  select(id, visit, cdis_1a1_num, cdis_2e_num) %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(cdi_ws = cdis_1a1_num, sent_comp = cdis_2e_num) %>%
+  select(subject, visit, age_years, cdi_ws, sent_comp) %>%
+  arrange(subject, visit)
+
+syntax <- get_table(ldp, "syntax") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  rename(syntax = syntax_raw) %>%
+  select(subject, visit, age_years, syntax) %>% 
+  arrange(subject, visit)
+
+wppsi <- get_table(ldp, "wppsi_block_design") %>%
+  collect() %>%
+  select(-id) %>%
+  rename(id = visit) %>%
+  left_join(visits) %>%
+  filter(subject %in% subjs$subject) %>%
+  arrange(subject, visit) %>%
+  filter(!is.na(wppsi_block_raw)) %>%
+  select(subject, visit, age_years, wppsi_block_raw) %>%
+  rename(wppsi_block = wppsi_block_raw)
+
+measures <- full_join(ppvt, cdi_ws, by = c("subject", "visit", "age_years")) %>%
+  full_join(syntax, by = c("subject", "visit", "age_years")) %>%
+  full_join(wppsi, by = c("subject", "visit", "age_years")) %>%
+  gather(measure, value, ppvt, cdi_ws, sent_comp, syntax, wppsi_block) %>%
+  filter(!is.na(value)) %>%
+  arrange(subject, measure, visit) %>%
+  mutate(person = "child")
+
+subjs_over_10 <- together_present %>%
+  select(subject,session) %>%
+  distinct() %>%
+  group_by(subject) %>%
+  summarise(n=n()) %>%
+  filter(n>=10) %>%
+  pull(subject)
+```
+
+```{r}
+# model <- measures %>%
+#   filter(measure == "ppvt") %>%
+#   #filter(!measure %in% c("wppsi_block", "sent_comp")) %>%
+#   group_by(measure) %>%
+#   mutate(value = scale(value)) %>%
+#   lmer(value ~ age_years + 
+#          (age_years | subject), 
+#        control = lmerControl(optCtrl = list( maxfun=20000),
+#                              optimizer = "bobyqa"), data = .)
+# 
+model_setup <- measures %>%
+  filter(!measure %in% c("wppsi_block", "sent_comp")) %>%
+  group_by(measure) %>%
+  mutate(value = scale(value)) %>%
+  ungroup() %>%
+  mutate(measure = factor(measure))
+
+contrasts(model_setup$measure) <- contr.sum(3)
+
+model <- lmer(value ~ measure * age_years +
+         (age_years + measure | subject),
+       control = lmerControl(optCtrl = list( maxfun=20000),
+                             optimizer = "bobyqa"), data = model_setup)
+
+subj_effects <- ranef(model)$subject %>% 
+  rownames_to_column("subj") %>%
+  data.frame() %>%
+  as_tibble() %>%
+  rename(intercept = `X.Intercept.`, slope = age_years) %>%
+  select(subj, intercept, slope)
+
+write_csv(subj_effects, "subjs_effects_sum.csv")
+```
+
+```{r}
+fit <- readRDS("CogSci2019Submission/data/hierppvt1000iters.rds")
+
+```
+
+
+```{r}
+together_present_demos <- together_present %>%
+  left_join(subjs, by = 'subject') %>%
+  left_join(ppvt, by= 'subject') %>%
+  na.omit() %>%
+  mutate(female = as.numeric(sex == 'F'),
+         male = as.numeric(sex == 'M'),
+         white = as.numeric(sex == 'WH'),
+         black = as.numeric(sex == 'BL'),
+         multi = as.numeric(sex == '2+'),
+         income_category = income_category - 1)
+
+
+# treat mother_ed as ordinal variable
+conversion = c("Some High School"=0, "High School or GED"=1, "Some College or Trade School"=2, "Bachelor's Degree"=3, "Advanced Degree"=4)
+together_present_demos$mother_education = conversion[together_present_demos$mother_education]
+
+```
+
+```{r Filtering for Prop Stan model}
+chosen_subject <- c(39)
+
+together_present <- together_present_demos %>%
+  ungroup() %>%
+  filter(subject %in%subjs_over_10) %>%
+  filter(subject %in% chosen_subject) %>% ## IF ONLY SAMPLING FOR ONE SUBJECT
+  mutate(uid = paste0(subject, "_", person)) %>%
+  mutate(uid = as.numeric(as.factor(uid))) %>%
+  mutate(parentid = case_when(person == 'Parent' ~ uid,
+                              TRUE ~ uid + 1),
+         childid = case_when(person == 'Child' ~ uid,
+                             TRUE ~ uid - 1))
+
+ppvt_model_data <- together_present %>% 
+  select(childid, parentid, ppvt, age_years, mother_education, female) %>% 
+  distinct() 
+
+small_together_present <- together_present %>% 
+  select(-length, -null, -lag_null, -visit, -age_years, -ppvt, -parentid, -childid) %>% 
+  distinct()
+
+emp_logit <- function(x, eps){
+  x <- log((eps + x)/(1 - x + eps))
+}
+# LOGIT TRANSFORM OF PROPORTION DATA
+
+current_prop <- small_together_present %>% 
+  select(article, certain, conj, discrep, excl, i,incl, ipron, negate, preps, quant, tentat, we, you) %>% 
+  as.matrix() %>%
+  emp_logit(.,1e-5)
+
+lag_prop <- small_together_present %>% 
+  select(lag_article, lag_certain, lag_conj, lag_discrep, lag_excl, lag_i,lag_incl, 
+         lag_ipron, lag_negate, lag_preps, lag_quant, lag_tentat, lag_we, lag_you) %>% 
+  as.matrix() %>% 
+  emp_logit(.,1e-5)
+
+  
+NumMarkers <- length(unique(liwc$category))
+MidAge <- median(unique(together_present$session))
+NumSubPops <- length(unique(small_together_present$person))
+NumObservations <- dim(small_together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(small_together_present$person)) # Child - 1, Parent - 2
+SpeakerAge <- small_together_present$session
+NumSpeakers <- length(unique(small_together_present$uid))
+NumSex <- length(unique(small_together_present$sex))
+NumMomEd <- length(unique(small_together_present$mother_education))
+SpeakerSubPop <- small_together_present %>% 
+  distinct(person, uid) %>%
+  mutate(subpop =  as.numeric(as.factor(person))) %>%
+  pull(subpop) # Child - 1; Parent - 2
+SpeakerMomEd <- small_together_present %>% 
+  mutate(mother_education = mother_education+1) %>% 
+  distinct(uid, mother_education) %>%
+  pull(mother_education)
+SpeakerSex <- small_together_present %>% 
+  distinct(uid, sex) %>%
+  mutate(sex =  as.numeric(as.factor(sex))) %>%
+  pull(sex) # Female - 1; Male - 2
+SpeakerId <-small_together_present$uid
+SpeakerAge <- small_together_present$session
+mother_education <- small_together_present$mother_education
+female <- small_together_present$female
+
+ppvt_vals <- ppvt_model_data$ppvt
+NumPPVT <- dim(ppvt_model_data)[1]
+age_years <- ppvt_model_data$age_years
+mother_education_ppvt_data <- ppvt_model_data$mother_education
+female_ppvt_data <- ppvt_model_data$female
+parentid <- ppvt_model_data$parentid
+childid <- ppvt_model_data$childid
+StdDev <- .25
+
+
+fit <- stan('stan_models/alignment_props.stan', chains = 1, iter = 50)
+divergent <- get_sampler_params(fit, inc_warmup=FALSE)[[1]][,'divergent__']
+
+
+
+
+```
+
+```{r Extract Stan Fit info}
+SE_UPPER <- .84
+SE_LOWER <- .16
+
+pars <- names(fit) %>%
+  as_data_frame() %>%
+  filter(!str_detect(value, "Marker"), 
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab"),
+          !str_detect(value, "lp__")) %>%
+  pull()
+
+parameter_cis <- rstan::extract(fit, pars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER)) %>%
+  ungroup() %>% 
+  mutate(measure = gsub("eta_ab","eta-ab", measure)) %>%
+  separate(measure, into = c("parameter", "type") , sep = "_", 
+           extra = "merge") %>%
+  mutate(id = gsub("[^0-9]*","", str_extract(type, "\\[[^()]+\\]")),
+         type = gsub("\\[[^()]+\\]", "", type),
+         type = factor(type, levels = c("pop", "subpop", "speaker")),
+         id = case_when(
+           is.na(id) ~ "pop",
+           type == "subpop" & id == 1 ~ "child",
+           type == "subpop" & id == 2 ~ "parent",
+           T ~ id)
+         ) %>%
+  left_join(distinct(small_together_present, subject, uid, person) %>% 
+              mutate(uid = as.character(uid)), by = c("id" = "uid")) %>%
+  arrange(type, parameter) %>%
+  mutate(id = if_else(is.na(subject), id, as.character(subject))) %>%
+  select(-subject)
+
+demopars <- names(fit) %>%
+  as_data_frame() %>%
+  filter(str_detect(value, "mu") | str_detect(value, 'ppvt') | str_detect(value, 'sigma'),
+         !str_detect(value, "observation"),
+         !str_detect(value, "mu_ab"),
+         !str_detect(value, "mu_notab")) %>%
+  pull()
+
+demoparameters <- rstan::extract(fit, demopars) %>%
+  bind_rows(.id = "sample") %>%
+  gather(measure, value, -sample) %>%
+  group_by(measure) %>%
+  summarise(mean = mean(value), se_upper = quantile(value,SE_UPPER), 
+            se_lower = quantile(value,SE_LOWER))
+```
+
+
+```{r Check Representation of Each Subject}
+together_present %>% 
+  group_by(subject) %>% 
+  summarise(sessions = n_distinct(session)) %>% 
+  View()
+
+# Most have all sessions - going to pick 10 sessions as the min
+model_subjs <- together_present %>% 
+  group_by(subject) %>% 
+  summarise(sessions = n_distinct(session)) %>% 
+  filter(sessions >= 10) %$% 
+  subject
+
+model_together_present <- together_present %>% 
+  filter(subject %in% model_subjs)
+```
+
+
+```{r Filtering / Preparing Data for Stan Model - SPLIT BY SUBJECT}
+chosen_subject <- model_subjs[4]
+
+small_together_present <- model_together_present %>% 
+  filter(subject == chosen_subject)
+
+liwc_markers <- names(small_together_present)[18:31]
+lag_markers <- names(small_together_present)[4:17]
+
+LiwcCounts <- small_together_present %>% 
+  ungroup() %>%
+  select(one_of(liwc_markers), null) %>% 
+  as.matrix()
+
+LagCounts <- small_together_present %>% 
+  ungroup() %>% 
+  select(one_of(lag_markers)) %>% 
+  as.matrix()
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(unique(together_present$session))
+NumSubPops <- length(unique(small_together_present$person))
+NumObservations <- dim(small_together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(small_together_present$person)) # Child - 1, Parent - 2
+SpeakerAge <- small_together_present$session
+StdDev <- 1
+
+fit <- stan('stan_models/multinomial_alignment.stan', chains = 1)
+
+```
+
+
+```{r Optional Filtering - VECTORIZED 1 LIWC CATEGORY}
+### For one LIWC category model
+together_present <- together_present %>% 
+  mutate(not_ipron = article + certain + conj + discrep + excl + i + incl + negate + 
+           preps + quant + tentat + we + you + null) %>% 
+  select(session, subject, person, lag_ipron,lag_null, ipron, not_ipron) %>% 
+  filter(session %in% c(4,8),
+         subject == 22,
+         person == 'Parent') 
+
+LiwcCounts <- together_present %>% 
+  select(ipron, not_ipron) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  select(lag_ipron, lag_null) %>% 
+  as.matrix()
+
+```
+
+
+```{r Optional Filtering - 1 LIWC CATEGORY}
+### For one LIWC category model
+together_present <- together_present %>% 
+  mutate(not_ipron = article + certain + conj + discrep + excl + i + incl + negate + 
+           preps + quant + tentat + we + you + null) %>% 
+  select(session, subject, person, lag_ipron, ipron, not_ipron) %>% 
+  filter(session %in% c(4,8),
+         subject == 22,
+         person == 'Parent') 
+
+LiwcCounts <- together_present %>% 
+  select(ipron, not_ipron) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  select(lag_ipron) %>% 
+  as.matrix()
+
+```
+
+```{r VECTORIZED Aggregate Stan Data (for one LIWC Category Model)}
+liwc_markers <- names(together_present)[5]
+
+NumMarkers <- length(liwc_markers)
+MidAge <- rep(median(unique(together_present$session)), NumMarkers+1)
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- matrix(rep(together_present$session, NumMarkers+1), NumObservations, byrow = TRUE)
+StdDev <- 1
+```
+
+```{r Aggregate Stan Data (for one LIWC Category Model)}
+
+liwc_markers <- names(together_present)[5]
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(unique(together_present$session))
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- together_present$session
+StdDev <- 1
+
+```
+
+
+```{r Optional Filtering - 2 LIWC CATEGORY}
+### For two LIWC category model
+together_present <- together_present %>% 
+  mutate(null = article + certain + conj + discrep + excl + i + incl + negate + 
+           preps +  tentat + we + you + null) %>% 
+  select(session, subject, person, lag_ipron, ipron, null, quant, lag_quant) %>% 
+  filter(session == 5,
+         subject == 22,
+         person == 'Child')
+
+LiwcCounts <- together_present %>% 
+  select(ipron, quant, null) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  select(lag_ipron, lag_quant) %>% 
+  as.matrix()
+
+```
+
+
+```{r Aggregate Stan Data (for two LIWC Category Model)}
+
+liwc_markers <- names(together_present)[c(5,7)]
+lag_markers <- names(together_present)[c(4,8)]
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(unique(together_present$session))
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- together_present$session
+StdDev <- 1
+
+```
+
+```{r Optional Filtering - FULL LIWC MODEL}
+together_present <- together_present %>%
+  filter(session %in% c(3,8),
+         subject %in% c(22,25,30))
+```
+
+```{r VECTORIZED Aggregate Stan Data (for full LIWC Category Models)}
+liwc_markers <- names(together_present)[18:31]
+lag_markers <- names(together_present)[4:17]
+
+LiwcCounts <- together_present %>% 
+  ungroup() %>%
+  select(one_of(liwc_markers), null) %>% 
+  as.matrix()
+
+LagCounts <- together_present %>% 
+  ungroup() %>% 
+  select(one_of(lag_markers), lag_null) %>% 
+  as.matrix()
+
+NumMarkers <- length(liwc_markers)
+MidAge <- rep(median(unique(together_present$session)), NumMarkers+1)
+NumSubPops <- length(unique(together_present$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present$person)) # Child - 1; Parent - 2
+SpeakerAge <- matrix(rep(together_present$session, NumMarkers+1), NumObservations, byrow = TRUE)
+StdDev <- 1
+```
+
+
+```{r Aggregate Stan Data (for full LIWC Category Models) - CHILD}
+together_present.child <- together_present %>% 
+  filter(person=='Child')
+
+
+liwc_markers <- names(together_present.child)[18:31]
+lag_markers <- names(together_present.child)[4:17]
+
+LiwcCounts <- together_present.child %>% 
+  ungroup() %>%
+  select(one_of(liwc_markers), null) %>% 
+  as.matrix()
+
+LagCounts <- together_present.child %>% 
+  ungroup() %>% 
+  select(one_of(lag_markers), lag_null) %>% 
+  as.matrix()
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(together_present.child$session)
+NumSubPops <- length(unique(together_present.child$person))
+NumObservations <- dim(together_present.child)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present.child$person)) # Child - 1
+SpeakerAge <- together_present.child$session
+StdDev <- 1
+```
+
+```{r Aggregate Stan Data (for full LIWC Category Models) - PARENT}
+together_present.parent <- together_present %>% 
+  filter(person=='Parent')
+
+liwc_markers <- names(together_present)[18:31]
+lag_markers <- names(together_present)[4:17]
+
+LiwcCounts <- together_present.parent %>% 
+  ungroup() %>%
+  select(one_of(liwc_markers), null) %>% 
+  as.matrix()
+
+LagCounts <- together_present.parent %>% 
+  ungroup() %>% 
+  select(one_of(lag_markers), lag_null) %>% 
+  as.matrix()
+
+NumMarkers <- length(liwc_markers)
+MidAge <- median(together_present.parent$session)
+NumSubPops <- length(unique(together_present.parent$person))
+NumObservations <- dim(together_present)[1]
+SpeakerSubPop <- as.numeric(as.factor(together_present.parent$person)) # Parent - 1
+SpeakerAge <- together_present.parent$session
+StdDev <- 1
+```
+
+
+```{r sanity checks}
+model_data <- LiwcCounts %>% 
+  as_data_frame() %>% 
+  bind_cols(as_data_frame(LagCounts)) %>%
+  mutate(session = SpeakerAge)
+
+
+model <- glm(cbind(ipron, not_ipron) ~ log(lag_ipron+1) * session,
+             family = "binomial", data = model_data) 
+
+predicted_data <- model_data %>%
+  mutate(empirical_ratio = ipron/(ipron + not_ipron)) %>%
+  mutate(predicted_ratio = inv.logit(predict(model)))
+
+predicted_data %>%
+  ungroup() %>%
+  select(-ipron, -not_ipron) %>%
+  gather(measure, value, empirical_ratio, predicted_ratio) %>%
+  group_by(lag_ipron, measure) %>%
+  summarise(value = mean(value), n= n()) %>%
+  spread(measure, value)
+
+
+# TODO Sanity check for age effect on alignment
+
+
+```
+
+```{r Fit No Age Multi Stan Model}
+fit <- stan('stan_models/noage_multinomial_alignment.stan', chains =1)
+```
+
+```{r Fit Age Multi Stan Model}
+fit <- stan('stan_models/multinomial_alignment.stan', chains = 1)
+```
+
+```{r Fit Vectorized Age Multi Stan Model}
+fit <- stan('stan_models/vectorized_multinomial_alignment.stan', chains = 1)
+```
+
+```{r View Stan Fit}
+launch_shinystan(fit)
+```
+
+```{r}
+# saveRDS(fit, file = "subsetfullfit.rds")
+fit <- readRDS('subsetfullfit.rds')
+```
+
+```{r Fit Extraction}
+fit <- readRDS("stanfits/subj22fit.rds")
+
+
+stan_names <- names(fit) %>%
+  as_data_frame() %>%
+  filter(!str_detect(value, "observation"),
+         !str_detect(value, "Marker"),
+         !str_detect(value, "mu"))
+
+rstan::extract(fit, stan_names[[1]][1:10]) %>%
+  bind_cols() %>%
+  summarise_all(mean) %>%
+  #mutate(id = 1:n()) %>%
+  gather(measure, value) %>%
+  filter(!str_detect(measure, "Marker")) %>% 
+  View()
+```
+
+```{r}
+lag_data <- together_present %>%
+  select(-null, -lag_null) %>%
+  mutate(row = 1:n()) %>%
+  gather(liwc, count, -subject, -session, -person, -row) %>%
+  separate(liwc, into = c("type", "liwc"), sep = "_", fill = "left") %>%
+  mutate(type = if_else(is.na(type), "current", "lag")) %>%
+  spread(type, count) %>%
+  group_by(person, session, subject, row) %>%
+  mutate(current = current/sum(current, na.rm = T),
+         lag = lag/sum(lag, na.rm = T)) %>%
+  group_by(person, session, subject, row, liwc)
+
+
+lag_data %>%
+  filter(subject == 22, session < 5) %>%
+  lm(logit(current) ~ logit(lag) * liwc * person, data = .) %>%
+  summary()
+  
+
+lag_data %>%
+  filter(subject == 22, session < 5) %>%
+  mutate(current = current > 0, lag = lag >0) %>%
+  glm(current ~ lag * liwc * person, data = .) %>%
+  summary()
+  
+  
+  
+  ggplot(aes(x = lag, y = current, color = person)) +
+  geom_point(alpha = .01) + 
+  facet_grid(person ~ session) +
+  geom_smooth(se = F,method = "loess") +
+  theme_classic() +
+  geom_hline(aes(yintercept = 0), lty =2) + 
+  theme(legend.position = "none")
+  
+  
+```
+

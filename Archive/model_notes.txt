@@ -1,0 +1,22 @@
+# New alignment model
+
+# old model, think about LIWC categories independently
+# look at last utterance, did marker occur or not
+# if not, prob of a marker is drawn from some baseline distribution
+# if it did, prob of a marker is drawing from transformed distribution that (through inv logit transform) results in increased likelihood
+# results in length confound
+
+# instead, each word in utterances is drawn from multinomial distribution
+
+Multinomial(beta0, beta1 + 2alpha1, beta2 + alpha2, etc.)
+# scalar of alpha_n is based on number of instances of each liwc category
+
+# try combining sentences with the same frequency of occurrences within each liwc category
+	# unclear how many utterances this will reduce to
+
+
+# for every utterance count up the instances of every liwc category (and length)
+# create categories by parent, session based on liwc count distribution
+
+
+# to reduce input again, potentially reduce population-level distribution (i.e., parse data into two groups according to speaker; run once on each)
