@@ -10,13 +10,13 @@ author-information: >
         Department of Psychology \\ University of Chicago}
 
 abstract: >
-    Children quickly gain enormous linguistic knowledge during early development, in part due to low-level features of their parents' speech. Some posit that parents contribute to their child's language development by calibrating their language according to their child's developmental abilities and needs [@Bruner:1985if; @Snow:2018wf]. Here, we investigate this hypothesis by examining 'alignment' at the level of syntax in a large-scale corpus of parent-child conversations and measuring its association with language development outcomes. To do so, we employ a statistical model of alignment to estimate its presence in our dataset and its impact on language development outcome measures. Our results corroborate previous findings, showing strong alignment for both parents and children; in addition, we demonstrate that parental alignment is a significant predictor of language maturity independent of demographic features, suggesting that parental tuning has strong ties to a child's language development. 
+    Children quickly gain enormous linguistic knowledge during early development, in part due to low-level features of their parents' speech. Some posit that parents contribute to their child's language development by tuning their own language according to their child's developmental abilities and needs [@Bruner:1985if; @Snow:2018wf]. Here, we investigate this hypothesis by examining 'alignment' at the level of syntax and function words in a large-scale corpus of parent-child conversations and measuring its association with language development outcomes. To do so, we employ a statistical model of alignment to estimate its presence in our dataset and its predictive impact on a measure of vocabulary development. Our results corroborate previous findings, showing strong alignment for both parents and children; in addition, we demonstrate that parental alignment is a significant predictor of language maturity independent of demographic features, suggesting that parental tuning has strong ties to a child's language development. 
     
 keywords: >
-    Language acquisition; computational modeling; cognitive development
+    Language acquisition; statistical modeling; vocabulary development
     
 output: cogsci2016::cogsci_paper
-# final-submission: \cogscifinalcopy
+final-submission: \cogscifinalcopy
 ---
 
 ```{r global_options, include=FALSE}
@@ -58,7 +58,7 @@ demos <- long_present %>%
 
 write_csv(demos, "data/demos.csv")
 
-liwc <- read_tsv("word_lists/liwc2007_converted.tsv", col_names = FALSE) %>%
+liwc <- read_tsv("../data/liwc2007_converted.tsv", col_names = FALSE) %>%
   rename(word = X1, category = X2)
 
 liwc_cats <- liwc %>%
@@ -81,21 +81,21 @@ liwc_cats <- liwc %>%
 
 Children make vast linguistic strides within their first few years of life.
 <!-- and acquiring an understanding of compositional structure [@Lieven:2009ii].To explore this feat, many have probed the role of statistical learning in features of language development, such as detecting words [@Anonymous:6O2YEUCo], grammar [@Gomez:1999bx], and semantics [@Naigles:1990cw; @OVIDDS:2009uz; @Smith:2008gp]. -->
-In light of this some researchers have put forward the linguistic tuning hypothesis, arguing that parents bolster their child's early language learning by calibrating the complexity of their speech to the particular abilities and needs of their children [@Montag:2015iy; @Snow:2018wf; @Thiessen:2005tx]. The idea is intuitive, but it is unclear at what level of language tuning occurs [@Hayes:1988ue; @Sokolov:1993cr; @Spivey:2006fa] and how overt it is [@Brown:1970wd; @Chouinard:2003kq; @HirshPasek:1984bd].
+In light of this, some researchers have offered the linguistic tuning hypothesis, arguing that parents bolster their child's early language learning by calibrating the complexity of their speech to the particular abilities and needs of their children [@Montag:2015iy; @Snow:2018wf; @Thiessen:2005tx]. The idea is intuitive, but it is unclear at what level of language tuning occurs [@Hayes:1988ue; @Sokolov:1993cr; @Spivey:2006fa] and how overt it is [@Brown:1970wd; @Chouinard:2003kq; @HirshPasek:1984bd].
 
   A parallel yet complementary vein of language development research investigates the presence of low-level cues in parental speech and their influence on child language learning. From this research, we know that child-directed speech contains features that facilitate language learning, and that more exposure tends to result in better outcomes  [@CameronFaulkner:2003ge; @Weisleder:2013ht]. Related, caregivers from families of high socioeconomic status (SES) tend to
 converse more with their children than their lower SES counterparts, and these increases are associated with improved development outcomes such as vocabulary size and school performance [@Hoff:2003kx; @Anonymous:GIFaG1Qd]. Moreover, differences in SES-based language development are largely explained by low-level features of parental child-directed speech such as lexical diversity and sentence complexity [@HoffGinsberg:2008up;@ROWE:2008go]. So, given that granular aspects of parental speech can have substantial effects on a child's language development, it may be that linguistic tuning occurs at this level in subtle ways, particularly when it comes to non-content words (i.e., words
 that are not central to the topic of discussion.)  
 
-  This idea of assessing the direct impact of a parent's usage of non-content word on language development relates to linguistic alignment, a phenomenon whereby
+  This idea of assessing the direct impact of a parent's usage of non-content words on language development relates to linguistic alignment, a phenomenon whereby
 conversational partners tend to align aspects of their communicative style and content according to
-various external influences [@Pennebaker:kqtgxul0]. Alignment can occur at various levels of language, with some research (including ours) focusing on the level of syntactic categories [e.g., @Ireland:2010gl; @Niederhoffer:2016co]. As an example, see the exchange between a child and parent presented in Table 1. The parent's usage of "across" directly following their child's usage of "across" presents alignment within the syntactic category of prepositions. Alignment need not involve repetition however; the child's use of "I" following their parent's use of "I'll" serves as alignment within a category as well. Alignment between parents and children may lend support to the linguistic tuning hypothesis - if parents align to their children in a way that changes across development, and that alignment has a concrete impact on a child's language acquisition, the tuning hypothesis could be vindicated [@Bruner:1985if]. 
+various external influences [@Pennebaker:kqtgxul0]. Alignment can occur at various levels of language, with some research (including ours) focusing on the level of quasi-syntactic categories [e.g., @Ireland:2010gl; @Niederhoffer:2016co]. These categories don't strictly describe syntax; instead, they aim to capture function words, which are more invariant to context than content words. However, we often use the phrase 'syntactic alignment' here as shorthand for 'alignment within function word categories.' As an example, see the exchange between a child and parent presented in Table 1. The parent's usage of "across" directly following their child's usage of "across" presents alignment within the category of prepositions. Alignment need not involve repetition however; the child's use of "I" following their parent's use of "I'll" serves as alignment within a category as well (the category of 'I' pronoun words.) Alignment between parents and children may lend support to the linguistic tuning hypothesis - if parents align to their children in a way that changes across development, and that alignment has a concrete impact on a child's language acquisition, the tuning hypothesis could be vindicated [@Bruner:1985if]. 
 
   @Anonymous:r2JoRscQ investigates linguistic alignment in CHILDES [@MacWhinney:2000jx], a natural language
-corpus of conversations between parents and children  to assess whether tuning occurs at the level of syntactic categories. They find that syntactic alignment does occur between both parents and children; moreover, parents align less over time, suggesting that the relationship their speech shares with their child's changes as a function of development. These results present a powerful proof of concept that syntactic alignment exists between parents and children and changes over time, but it remains unclear whether alignment bears any sort of concrete, impactful relationship to language development.
+corpus of conversations between parents and children to assess whether tuning occurs at the level of function word categories. They find that alignment does occur between both parents and children; moreover, parents align less over time, suggesting that the relationship their speech shares with their child's changes as a function of development. These results present a powerful proof of concept that alignment within function word categories exists between parents and children and changes over time, but it remains unclear whether alignment bears any sort of concrete, impactful relationship to language development.
 
 ```{r chat xtable, results = 'asis'}
-chat_excerpt <- read_feather(here('chat_excerpt.feather')) %>% 
+chat_excerpt <- read_feather(here('data/chat_excerpt.feather')) %>% 
   select(person, chat)
 
 chat_table <- chat_excerpt %>% 
@@ -107,18 +107,18 @@ print(chat_table, type = 'latex', comment=F,table.placement = "H", include.rowna
 Here, we extend Yurovsky, Doyle, and Frank's -@Anonymous:r2JoRscQ model by applying it to the Language Development
 Project (LDP) [@GoldinMeadow:2014hr], a corpus of
 ecological conversations between parents and their children over time, collected from a
-socioeconomically diverse sample of parent-child dyads. Moreover, we use alignment estimates alongside demographic information to predict language outcome measures, strengthening the linguistic tuning hypothesis by concretely showing how parents' sensitivity to their child's linguistic needs and abilities covaries with their development. 
+socioeconomically diverse sample of parent-child dyads. The variability present within this dataset aids our estimation by offering a more robust picture of alignment as it actually occurs. We follow their method of assessing alignment only within function words. Moreover, we use alignment estimates alongside demographic information to predict measures of vocabulary development, supporting the linguistic tuning hypothesis by concretely showing how parents' sensitivity to their child's linguistic needs and abilities covaries with their development. 
 
 # Model
 
-The linguistic tuning hypothesis predicts that parents will calibrate their language in part by assessing their child's needs and abilities. So, we predict that parents will exhibit high alignment to their young children, but will reduce their alignment as their children mature. To test this prediction, we employ an extended version of the Hierarchical Alignment Model implemented in @Anonymous:r2JoRscQ which both estimates the impact of a speaker's use of syntactic categories on their conversational partner's usage and uses these alignment estimates to predict language outcome scores. 
+The linguistic tuning hypothesis predicts that parents will calibrate their language in part by assessing their child's needs and abilities. So, we predict that parents will exhibit high alignment to their young children, but will reduce their alignment as their children mature (and improve in linguistic maturity.) To test this prediction, we employ an extended version of the Hierarchical Alignment Model implemented in @Anonymous:r2JoRscQ which both estimates the impact of a speaker's use of function word categories on their conversational partner's usage and uses these alignment estimates to predict language outcome scores. 
   
-At base, the model predicts, for each utterance, whether the speaker will produce a word from a given syntactic category. This prediction is generated by two factors: the speaker's baseline propensity towards using that category and the speaker's tendency to align, producing words from a category just used by their partner. In the model, the primary computation mimics a standard logistic regression - the production of a syntactic category within an utterance is treated as a binary outcome variable impacted by a linear combination of predictor variables (here, baseline usage and alignment.) The model's hierarchical structure then allows the estimates of baseline usage and alignment effects to be pooled across individual speakers and syntactic categories in a way that ensures statistical robustness.
+At base, for each utterance the model predicts whether the speaker will produce a word from a given function word category. This prediction is generated by two factors: the speaker's baseline propensity towards using that category and the speaker's tendency to align, producing words from a category just used by their partner. In the model, the primary computation mimics a standard logistic regression - the production of a category within an utterance is treated as a binary outcome variable impacted by a linear combination of predictor variables (here, baseline usage and alignment.) The model's hierarchical structure then allows the estimates of baseline usage and alignment effects to be pooled across individual speakers and categories in a way that ensures statistical robustness.
 
-The model used here then incorporates these alignment and baseline usage estimates as predictors in a linear regression model of the Pearson Peabody Vocabulary Test (PPVT) [@PeabodyPictureVoca:im], a widely used inventory for tracking language development. At this stage, PPVT is estimated as a linear combination of predictors reflecting alignment and baseline usage estimate for both parents and children alongside other features representing demographic variables (e.g., child's gender, mother's education) and the child's age.
+The model used here then incorporates these alignment and baseline usage estimates as predictors in a linear regression model of the Pearson Peabody Vocabulary Test (PPVT) [@PeabodyPictureVoca:im], a widely used inventory for tracking language development. Measures of vocabulary like the PPVT offer a robust snapshot of overall language abilities throughout early language development, with PPVT scores in particular correlating with various other measures of cognitive ability [@Hodapp:1999ih; @Naglieri:1981ju]. As one of various measures of cognitive and language ability present within the LDP dataset, we selected the PPVT for its reliability and validity in addition to it being a measure not based solely on parent report. At this stage, PPVT is estimated as a linear combination of predictors reflecting alignment and baseline usage estimates for both parents and children, alongside other features representing demographic variables (e.g., child's gender, mother's education) and the child's age. Moreover, the PPVT was administered to each child in LDP at least twice, allowing us to estimate interaction effects between parameter and demographic variables with age.
 
 ```{r liwc xtable, results = 'asis'}
-sample <- read_feather(here('liwc_sample_table.feather'))
+sample <- read_feather(here('data/liwc_sample_table.feather'))
 
 sample_table <- sample %>% 
   xtable::xtable(.,caption = 'LIWC Categories with example words.')
@@ -128,7 +128,7 @@ print(sample_table, type="latex", comment = F, table.placement = "H", include.ro
 
 ## Model Details
 
-The structure of the model used here greatly resembles that used in @Anonymous:r2JoRscQ, in that it operates over utterances represented as binary vectors, with indices indicating the presence or absence of each of the 14 LIWC categories (Table 2). The probability of producing each category in each utterance is computed via two parameters: the speaker's baseline usage of that syntactic category ($\eta^{base}$), and the change in that speaker's baseline as a function of interacting with the listener ($\eta^{align}$). So, for a given syntactic category $c$, for replies to utterances that don't contain $c$, the production parameter for that category is computed by applying the inverse logit function to the appropriate baseline log odds:
+The structure of the model used here greatly resembles that used in @Anonymous:r2JoRscQ, in that it operates over utterances represented as binary vectors, with indices indicating the presence or absence of each of the 14 LIWC categories used within alignment literatures [@Pennebaker:kqtgxul0] to designate function words (Table 2). The probability of producing each category in each utterance is computed via two parameters: the speaker's baseline usage of that LIWC category ($\eta^{base}$), and the change in that speaker's baseline as a function of interacting with the listener ($\eta^{align}$). So, for a given category $c$, for replies to utterances that don't contain $c$, the production parameter for that category is computed by applying the inverse logit function to the appropriate baseline log odds:
 $$
 P(Production_c) = logit^{-1}(\eta^{base}_c)
 $$
@@ -139,14 +139,14 @@ $$
    
 To accommodate the variance in production across the LIWC categories, each baseline usage parameter was drawn from an uninformative prior ($\eta^{base} \sim Uniform(-5,5)$); alignment parameters were regularized towards 0 by way of implementing a conservative prior ($\eta^{align} \sim Normal(0,.25)$).  
   
-All parameters were estimated hierarchically, which allows intelligent pooling of data across participants in the dataset. To start, each subpopulation (i.e., parents vs. children) obtained an estimate. Then, every speaker had an alignment estimate drawn from their appropriate subpopulation (e.g., if Speaker 22 is a child, their alignment estimate is drawn from the estimate for children overall.) Category-level alignment estimates were then drawn for each speaker (e.g., the alignment estimate for Speaker 22's usage of determiners is drawn from Speaker 22's alignment estimate.) The order was flipped for baseline estimates in order to better reflect empirical baseline usages across syntactic categories; subpopulation estimates produced category-level estimates, which then produced speaker-level estimates. As in @Anonymous:r2JoRscQ, we also include parameters that allow baseline and alignment probabilities to change linearly over time ($\beta$ and $\alpha$ respectively).  
+All parameters were estimated hierarchically, which allows intelligent pooling of data across participants in the dataset. To start, each subpopulation (i.e., parents vs. children) obtained an estimate. Then, every speaker had an alignment estimate drawn from their appropriate subpopulation (e.g., if Speaker 22 is a child, their alignment estimate is drawn from the estimate for children overall.) Category-level alignment estimates were then drawn for each speaker (e.g., the alignment estimate for Speaker 22's usage of determiners is drawn from Speaker 22's overall alignment estimate.) The order was flipped for baseline estimates in order to better reflect empirical baseline usages across LIWC categories; subpopulation estimates produced category-level estimates, which then produced speaker-level estimates. As in @Anonymous:r2JoRscQ, we also include parameters that allow baseline and alignment probabilities to change linearly over time ($\beta$ and $\alpha$ respectively).  
   
-Next, we extend the model used in @Anonymous:r2JoRscQ by using estimated alignment (i.e., $\eta$ parameters) to predict PPVT scores, a measure of vocabulary development [@PeabodyPictureVoca:im]. To do so, we implement a regression model where PPVT scores are modeled as linear combinations of various predictor variables. These predictor variables included the child's age, alignment parameter estimates for the child and their parent, the mother's education, the child's gender, as well as interaction effects for all variables with age. Error variance for the model ($\sigma$) was also estimated.  
+Next, we extend the model used in @Anonymous:r2JoRscQ by using estimated alignment (i.e., $\eta$ parameters) to predict PPVT scores, a measure of vocabulary development [@PeabodyPictureVoca:im]. To do so, we implement a regression model where PPVT scores are modeled as linear combinations of various predictor variables. These predictor variables included the child's age, alignment parameter estimates for the child and their parent, the mother's education, the child's gender, as well as interaction effects for all variables with age. We use mother's education as a well known proxy for socioeconomic status [@Hollingshead:1975wn]. Error variance for the model ($\sigma$) was also estimated.  
   
-The model implemented here then serves two purposes: (1) It extends the analysis of @Anonymous:r2JoRscQ to a new dataset, aiming to replicate previous findings in a more diverse and representative sample, and (2) It incorporates alignment estimates in a predictive model of early language outcomes, serving to test the hypothesis that alignment has a significant relationship with language development, even in the presence of demographic features. To be specific, we hope to replicate non-zero estimates for $\eta$ parameters (demonstrating that alignment between parents and children exists across datasets), positive $\beta$ for children (showing that children increase their baseline usage of categories over time), and negative $\alpha$ for parents (showing that parents decrease their alignment as their children age.) If the PPVT model estimates for parameters corresponding to the main or interaction effects of alignment are non-zero in the presence of demographic variables, we can infer that alignment has an relationship with language development independent of features like socioeconomic status, bolstering the linguistic tuning hypothesis. 
+The model implemented here then serves two purposes: (1) It extends the analysis of @Anonymous:r2JoRscQ to a new dataset, aiming to replicate previous findings in a more diverse and representative sample, and (2) It incorporates alignment estimates in a predictive model of early language outcomes, serving to test the hypothesis that alignment has a significant relationship with language development, even in the presence of demographic features. To be specific, we hope to replicate non-zero estimates for $\eta$ parameters (demonstrating that alignment between parents and children exists across datasets), positive $\beta$ for children (showing that children increase their baseline usage of categories over time), and negative $\alpha$ for parents (showing that parents decrease their alignment as their children age.) If the PPVT model estimates for parameters corresponding to the main or interaction effects of alignment are non-zero in the presence of demographic variables, we can infer that alignment has a relationship with vocabulary development independent of features like socioeconomic status, bolstering the linguistic tuning hypothesis. 
 
 ```{r read_data}
-fit_hierarchical <- readRDS("../hierppvt500iters.rds")
+fit_hierarchical <- readRDS("../data/hierppvt500iters.rds")
 demos <- read_csv("../data/demos.csv")
 ```
 
@@ -177,14 +177,14 @@ momed <- demos %>%
 # Analysis
 
 ## Data and Methodology
-Conversations between parents and their children were drawn from the Language Development Project Corpus [@GoldinMeadow:2014hr]. Participants in the project were videorecorded in their homes for $\sim$ 90 minutes every four months starting when the child was 14-months and ending at 58-months. Participants were selected in order to produce a diverse sample demographically representative of the broader Chicagoland area. 
+Conversations between parents and their children were drawn from the Language Development Project Corpus [@GoldinMeadow:2014hr]. Participants in the project were videorecorded in their homes for $\sim$ 90 minutes every four months starting when the child was 14-months and ending at 58-months. Additionally, all participants took the PPVT on at least two occasions during the observation period. Participants were selected in order to produce a diverse sample demographically representative of the broader Chicagoland area. LDP is smaller than other comparable corpora of child-parent conversations (e.g., CHILDES), but it stands alone in its broad representation of families across the socioeconomic spectrum.
 
 We selected for analysis all children who were typically developing and completed at least 10 of the 12 planned recording sessions. Our sample consisted of `r nrow(demos)` target children, `r girls` of whom were girls, `r black` were Black and `r mixed` were Multiracial. Children were also socio-economically diverse, as measured by mother's education: `r momed %>% slice(1) %>% pull(n)` mothers had some highschool education, `r momed %>% slice(2) %>% pull(n)` had a highschool degree, `r momed %>% slice(3) %>% pull(n)` had some college or trade school, `r momed %>% slice(4) %>% pull(n)` had college degrees, and `r momed %>% slice(5) %>% pull(n)` had advanced degrees.
 
 Following @Anonymous:r2JoRscQ, successive utterances from a speaker within a transcript were concatenated into a single utterance. Individual utterances were then transformed into binary vectors with indices indicating the presence or absence of each of the 14 LIWC categories. This pre-processing turned every transcript into a speaker-reply format: each utterance within a transcript was both a reply to the preceding utterance and a message to the next one. 
   
   Each transcript was then compressed, yielding 4 numbers for each LIWC category. For a pair of speakers *A* and *B* in a transcript, for each LIWC category, we computed the number of utterances from *A* to *B* containing the category ($N^{align}$), the number of utterances from *A* to *B* not containing the category ($N^{base}$), the number of utterances containing the category responding to an utterance containing the category ($C^{align}$), and the number of utterances containing the category responding to an utterance not containing the category ($C^{base}$). Aggregating in this way provided the platform for the model's sampling - for each transcript, $C^{base}$ and $C^{align}$ were drawn from Binomial distributions parameterized by $N^{base}$ and $N^{align}$ chances respectively, with probabilities computed via the logistic regression models outlined above.  
-  Sampling was performed using Stan, a probabilistic programming language that implements Hamiltonian Monte Carlo sampling methods [@Carpenter:2017ke]. Posterior distributions for each parameter in the model were estimated using 500 iterations of Bayesian sampling, generating mean assessments with appropriate confidence intervals. \footnote{Data and code available on Github; will be made available at time of unblinding.} 
+  Sampling was performed using Stan, a probabilistic programming language that implements Hamiltonian Monte Carlo sampling methods [@Carpenter:2017ke]. Posterior distributions for each parameter in the model were estimated using 500 iterations of Bayesian sampling, generating mean assessments with appropriate confidence intervals. \footnote{Data and code available at \url{https://github.com/callab/ldp-alignment}.} 
 
 ```{r alignment_analysis_helpers}
 speaker_parameters <- c("eta_ab_speaker", "alpha_speaker", "beta_speaker")
@@ -284,7 +284,7 @@ ppvt_parameters <- ppvt_samples %>%
 
 Alignment estimates ($\eta^{align}$) for parents and children were both estimated above zero, corroborating the findings of @Anonymous:r2JoRscQ in showing that both groups exhibit alignment (Figure 1). We also replicate the finding that parents appear to align more to their children than children align to their parents. 
   
-  The model estimates developmental baseline changes ($\beta$) at approximately zero for parents, but significantly above zero for children, replicating previous findings. Alignment is estimated as having a significantly negative age effect ($\alpha$) in this dataset, replicating an earlier finding that parents tend to exhibit decreased alignment over their child's development (Figure 3). 
+  The model estimates changes in baseline category production across development ($\beta$) at approximately zero for parents, but significantly above zero for children, replicating previous findings. Alignment is estimated as having a significantly negative age effect ($\alpha$) for parents in this dataset, replicating an earlier finding that alignment from parents to children tends to decrease over their child's development (Figure 3). 
 
 ```{r parameters_plot, fig.width=3.25, fig.height=2.25, set.cap.width=T, num.cols.cap=1, cache = T, fig.cap = "Posterior parameter estimates for alignment ($\\eta$), developmental change in alignment ($\\alpha$), and developmental change in baseline function word production ($\\beta$) for both parents and children, as well estimated alignment between parents for a baseline. Bars indicate means, error-bars indicate 95\\% highest posterior density intervals generated via Bayesian sampling."}
 plot_parameters <- parameters %>%
@@ -322,9 +322,9 @@ demotable <- plot_parameters %>%
 print(demotable, type="latex", comment = F, table.placement = "H", include.rownames = FALSE, sanitize.text.function = function(x){x})
 ```
 
-The mean estimates for PPVT predictors are presented in Figure 2. PPVT is positively associated with the age of the child and their being female. Moreover, female children tend to have a decreased age effect on PPVT; this means that for female children, the expected increase in PPVT over time is smaller. Mother's education is negatively associated with PPVT, but has a slight positive age effect. Alongside these demographic effects, we see robust alignment effects on PPVT: child and parental alignment are both associated with increased PPVT, but with decreased age effects.
+The mean estimates for PPVT predictors are presented in Table 2; they illustrate effects on a child's average PPVT score as well as estimates of interaction effects with age (i.e., the rate at which PPVT improves over development.) As expected, PPVT is positively associated with the age of the child and their being female. Moreover, female children tend to have a decreased age effect on PPVT; female children have a higher average PPVT score relative to male counterparts, but their scores improve over time more gradually. Mother's education is negatively associated with PPVT, but has a slight positive age effect. Alongside these demographic effects, we see robust alignment effects on PPVT: child and parental alignment are both associated with increased PPVT, but with decreased age effects.
   
-```{r coefficients xtable, results = 'asis', eval = F}
+```{r coefficients xtable, results = 'asis', eval = T}
 ppvt_coefficients <- c("Age (years)", "Child Alignment","Age x Child Alignment","Female","Age x Female","Intercept", "Mother's Education", "Age x Mother's Education","Parent Alignment","Age x Parent Alignment")
 
 order <- c("Intercept","Age (years)", "Female","Age x Female","Mother's Education", "Age x Mother's Education","Child Alignment","Age x Child Alignment", "Parent Alignment","Age x Parent Alignment")
@@ -337,8 +337,9 @@ ppvt_parameters %>%
   mutate(Estimate = mean,
          StandardError = (ci_upper-ci_lower)/2) %>% 
   select(parameter,Estimate, StandardError) %>% 
-  slice(match(order, parameter)) %>%
-  xtable::xtable(., digits=2,caption = 'Parameter Estimates for PPVT predictors with standard errors.') %>% 
+  rename(Parameter = parameter) %>% 
+  slice(match(order, Parameter)) %>%
+  xtable::xtable(., digits=2,caption = 'Parameter Estimates for PPVT predictors (and intercept) with standard errors. Parameters with "x" denote estimates of variable interaction.') %>% 
   print(., type="latex", comment = F, table.placement = "H", include.rownames=FALSE, sanitize.text.function = function(x){x})
 
 # demotable <- ppvt_parameters %>%
@@ -352,7 +353,7 @@ ppvt_parameters %>%
 # print(demotable, type="latex", comment = F, table.placement = "H", include.rownames = FALSE,sanitize.text.function = function(x){x})
 ```
 
-```{r demopar_plot, fig.width=3.5, fig.height=2.25, set.cap.width=T, num.cols.cap=1, cache = T, fig.cap = "Posterior parameter estimates for demographic effects on PPVT scores. Points indicate means, error-bars indicate 95\\% highest posterior density intervals."}
+```{r demopar_plot, fig.width=3.5, fig.height=2.25, set.cap.width=T, num.cols.cap=1, cache = T, fig.cap = "Posterior parameter estimates for demographic effects on PPVT scores. Points indicate means, error-bars indicate 95\\% highest posterior density intervals.", eval = F}
 plot_ppvt_parameters <- ppvt_parameters %>%
   mutate(parameter = gsub("ppvt_", "", parameter),
          component = if_else(str_detect(parameter, "slope"), "Gain in PPVT", "PPVT Score"),
@@ -382,7 +383,17 @@ ggplot(plot_ppvt_parameters, aes(x = parameter, y = mean, ymin = ci_lower, ymax 
 
 ```
 
-```{r hpds, fig.env = "figure*", fig.width=7, fig.height=2.75, fig.align = "center", set.cap.width=T, num.cols.cap=2, fig.cap = "Model-estimated changes in linguistic alignment over development. Points indicate the mean of the posterior distribution, shaded regions indicate 68\\% highest probability density intervals, equivalent to one standard deviation.", cache = T}
+
+
+
+# Discussion
+  In an effort to understand and investigate how children rapidly acquire language, some argue that the language parents produce to their children is somehow calibrated to the child's particular needs and abilities [@Snow:2018wf]. While the idea is theoretically compelling, empirical work has produced mixed results, with strong results in favor of [@Chouinard:2003kq; @HirshPasek:1984bd] and against [@Brown:1970wd; @Hayes:1988ue].
+  
+However, much of this prior work investigates tuning as an overt effort on behalf of parents or tuning with respect to content words, with less examining the potential role of low-level syntactic influence [@Hoff:2003kx]. @Anonymous:r2JoRscQ presents just such an examination, demonstrating using Bayesian hierarchical modeling that parents align to their children according to their particular language usage at the level of function word categories. This paper extends their model by applying it to a new socioeconomically diverse sample of families [@GoldinMeadow:2014hr] and leveraging the model's alignment estimates to predict language development outcomes.  
+  
+The analysis presented here replicates the findings of @Anonymous:r2JoRscQ, showing strong alignment effects for both parents and their children, a substantial age effect for baseline useage in children, and a significant negative effect of age on alignment for parents. Moreover, we demonstrate that these alignment estimates have substantial power in predicting vocabulary development measures, even in the presence of demographic features such as gender and socioeconomic status. We corroborate previous findings that female children tend to have higher PPVT scores that improve more gradually over time [@Lange:2016gv; @Kaushanskaya:2013gi]. We conflict with other findings that positively associate child PPVT scores with mother's education [@DiCesare:2013ip; @Schady:2011bb]; this may be due to idiosyncracies of our dataset, including its limited size. 
+
+```{r hpds, fig.env = "figure*", fig.width=7, fig.height=2.75, fig.align = "center", set.cap.width=T, num.cols.cap=2, fig.cap = "Model-estimated changes in linguistic alignment over development. Points indicate the mean of the posterior distribution; shaded regions indicate 68\\% highest probability density intervals, equivalent to one standard deviation, for visualization purposes.", cache = T}
 ages <- tibble(session = 1:12) %>%
   ungroup() %>%
   distinct(session) %>%
@@ -416,25 +427,14 @@ hpds <- map(1:nrow(ages),
    geom_hline(yintercept=0,linetype='dashed') +
    theme(legend.position = "none",
          axis.title.x=element_text(vjust=-.5), axis.title.y=element_text(vjust=1)) +
-     geom_dl(method = list(dl.trans(x = x -.2), "first.qp", cex=1))
+     geom_dl(method = list(dl.trans(x = x -.2), "first.qp", cex=1))+
+   scale_color_manual(values=c("#CC6666", "#9999CC"))+
+   scale_fill_manual(values=c("#CC6666", "#9999CC"))
 ``` 
   
-
-
-# Discussion
-  In an effort to understand and investigate how children rapidly acquire language, some argue that the language parents produce to their children is somehow calibrated to the child's particular needs and abilities [@Snow:2018wf]. While the idea is theoretically compelling, empirical work has produced mixed results, with strong results in favor of [@Chouinard:2003kq; @HirshPasek:1984bd] and against [@Brown:1970wd; @Hayes:1988ue].
+  We show that parental alignment is associated with a relatively large boost in average PPVT scores, but with a negative age effect. The negative age effect may source from a ceiling on PPVT - children with higher average scores may simply have less ground to cover. Nevertheless, these results are consistent with a concrete effect of parental alignment on vocabulary development, and the linguistic tuning hypothesis more broadly. A similar story is evident from child alignment estimates: alignment has a small association with overall PPVT score and an age effect comparable to parental alignment. Here there may be a confound with childrens' baseline language production, in that children with lower production will have lower PPVT and diminished alignment as a result; future work should assess this interaction to better isolate the effects of alignment. 
   
-However, much of this prior work investigates tuning as an overt effort on behalf of parents or tuning with respect to content words, with less examining the potential role of low-level syntactic influence [@Hoff:2003kx]. @Anonymous:r2JoRscQ presents just such an examination, demonstrating using Bayesian hierarchical modeling that parents align to their children according to their particular language usage at the level of syntactic categories. This paper extends their model by applying it to a new socioeconomically diverse sample of families [@GoldinMeadow:2014hr] and leveraging the model's alignment estimates to predict language development outcomes.  
-  
-The analysis presented here replicates the findings of @Anonymous:r2JoRscQ, showing strong alignment effects for both parents and their children, a substantial age effect for baseline useage in children, and a significant negative effect of age on alignment for parents. Moreover, we demonstrate that these alignment estimates have substantial power in predicting language development outcomes, even in the presence of demographic features such as gender and socioeconomic status. We corroborate previous findings that female children tend to have higher PPVT scores that diminish over time [@Lange:2016gv; @Kaushanskaya:2013gi]. We conflict with other findings that positively associate child PPVT scores with mother's education [@DiCesare:2013ip; @Schady:2011bb]; this may be due to idiosyncracies of our dataset, including its limited size. 
-
-  We show that parental alignment is associated with a relatively large boost in overall PPVT scores, but with a negative age effect. The negative age effect may source from a ceiling on PPVT - children with higher scores may simply have less ground to cover. Nevertheless, these results are consistent with a concrete effect of parental alignment on language development, and the linguistic tuning hypothesis more broadly. A similar story is evident from child alignment estimates: alignment has a small association with overall PPVT score and an age effect comparable to parental alignment. Here there may be a confound with childrens' baseline language production, in that children with lower production will have lower PPVT and diminished alignment as a result; future work should assess this interaction to better isolate the effects of alignment. 
-  
-  Overall, these results show that parental alignment is a robust effect that appears to have a relationship with childrens' language development independent of demographic correlates, serving to further the linguistic tuning hypothesis. 
-  
-
-  
-  
+  Overall, these results show that parental alignment within function word categories is a robust effect that appears to have a relationship with childrens' language development independent of demographic correlates, serving to further the linguistic tuning hypothesis. 
   
 <!-- The entire content of a paper (including figures, references, and anything else) can be no longer than six pages in the \textbf{initial submission}. In the \textbf{final submission}, the text of the paper, including an author line, must fit on six pages. Up to one additional page can be used for acknowledgements and references. -->
 
