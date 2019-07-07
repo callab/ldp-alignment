@@ -41,7 +41,9 @@ vignettes/*.pdf
 read_ldp.R
 .Rproj.user
 
+# latex files
 CogSci2019Submission/CogSci2019Submission.tex
+.tex
 
 # Stan fit objects
 .rds
