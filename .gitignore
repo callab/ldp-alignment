@@ -42,3 +42,6 @@ read_ldp.R
 .Rproj.user
 
 CogSci2019Submission/CogSci2019Submission.tex
+
+# Stan fit objects
+.rds
