@@ -180,7 +180,7 @@ model {
       (mother_education[Observation] * ppvt_education)+ 
       (female[Observation] * ppvt_female) +
       (eta_ab_speaker[childid[Observation]] * ppvt_child_align) + 
-      (eta_ab_speaker[parentid[Observation]] * ppvt_parent_align) + 
+      (eta_ab_speaker[parentid[Observation]] * ppvt_parent_align) +
       (eta_ab_speaker[childid[Observation]] * age_years[Observation] * ppvt_child_align_slope) + 
       (eta_ab_speaker[parentid[Observation]] * age_years[Observation] * ppvt_parent_align_slope) +
       (mother_education[Observation] * age_years[Observation] * ppvt_mother_ed_slope)+
